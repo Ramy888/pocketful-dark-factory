@@ -9,21 +9,24 @@ goes in the task the human posts into the room.
 
 | Seat | Mandate | Runtime | Model | Owns |
 |---|---|---|---|---|
-| coordinator | [mandates/coordinator.md](mandates/coordinator.md) | Claude Code | claude-opus-5 | plan, sequencing, decisions log, acceptance bookkeeping, the report |
-| implementer | [mandates/implementer.md](mandates/implementer.md) | Claude Code | claude-sonnet-5 | code and its tests, one work item at a time, handoffs with reproducible evidence |
-| verifier | [mandates/verifier.md](mandates/verifier.md) | Claude Code | claude-opus-5 | acceptance checks derived from the specification before the build, independent reproduction, adversarial probes, the veto |
+| coordinator | [mandates/coordinator.md](mandates/coordinator.md) | OpenCode | moonshotai/Kimi-K2.5 | plan, sequencing, decisions log, acceptance bookkeeping, the report |
+| implementer | [mandates/implementer.md](mandates/implementer.md) | OpenCode | MiniMaxAI/MiniMax-M2.5 | code and its tests, one work item at a time, handoffs with reproducible evidence |
+| verifier | [mandates/verifier.md](mandates/verifier.md) | OpenCode | zai-org/GLM-5.3 | acceptance checks derived from the specification before the build, independent reproduction, adversarial probes, the veto |
 
-A verifier on a different model family from the seats that build does not share their blind
-spots, and this factory was developed with that split: the verifier ran on Codex
-(`gpt-5.6-terra`, high effort), where it removed a guard from the source unprompted to confirm
-the concurrency tests failed without it, then restored it. That is the strongest evidence
-available that a suite is load-bearing rather than decorative.
+Three model families, one per seat, so no two seats share a blind spot. That is the point of
+the split: a check that thinks like the thing it is checking is not a check. `seats.conf` is
+the single source of truth for these rows, and a test fails if any mandate disagrees with it
+or if every seat ends up on one model.
 
-It is off by default anyway, because the cost of the split is asymmetric. A run that cannot be
-re-dispatched has no recovery from a provider usage limit: a verifier that stops halfway costs
-the whole deliverable, not an evening. Same-family review that finishes beats cross-family
-review that runs out. Opt the split back in with `CODEX_ROLES=verifier factory/bin/create-seats
-verifier` when the window is fresh and the work is worth it.
+**They were chosen on evidence, not reputation.** Each candidate was handed a function with an
+off-by-one against a stated rule and asked for a verdict. All three found it; the verifier's
+model was the one that cited the file and line, named the exact input that breaks it, and gave
+the one-character fix. A model that merely agrees something is wrong is not useful in that seat.
+
+The earlier build ran all three seats on one vendor, with the verifier optionally on a second.
+That was abandoned for a plainer reason than quality: a subscription runtime that hits a usage
+ceiling mid-run cannot be restarted, and a run that cannot be re-dispatched loses the whole
+deliverable. Per-request inference has no such ceiling.
 
 Each seat runs in its own git worktree (`seat/<role>` branch), so the verifier always tests the
 exact handed-off commit, never the implementer's working copy. Each worktree is configured with
@@ -60,20 +63,33 @@ Without the room, the verifier's REJECT has nowhere to land and no authority. Th
 
 ## Stand it up yourself
 
-Prerequisites: Jam Desktop (signed in, `jam preflight` green), Claude Code, git.
+Prerequisites: Band Desktop (signed in, `preflight` green), git, Docker, and the runtimes named
+in `seats.conf`. For the OpenCode seats: `brew install sst/tap/opencode` and a provider config at
+`~/.config/opencode/opencode.json`. Keep the API key in the environment, never in either
+repository — a deliverable is public and its history cannot be unpublished.
 
 ```sh
-CLAUDE_CONFIG_DIR=~/.claude-factory claude   # one time: sign in, then exit
-CLAUDE_CONFIG_DIR=~/.claude-factory claude plugin list      # disable anything listed:
-CLAUDE_CONFIG_DIR=~/.claude-factory claude plugin disable <name>
-factory/bin/create-seats                      # one Jam-owned agent per mandate
+. ~/.config/featherless/env                   # or wherever the key lives
+factory/bin/create-seats                      # worktree, git identity and mandate per seat
+factory/bin/run-seat <role>                   # for a runtime Band cannot own; --check to dry-run
 ```
 
-Each seat runs through `bin/claude-seat`. It points Claude Code at a dedicated config directory
-and switches off connectors attached to the Claude login. Seats therefore inherit none of the
-operator's personal instructions, skills, plugins or tool servers, only their mandate: Claude
-Code's core tools plus the room connection. The mandate is linked live as the agent's owner instructions, so editing
-the file changes the seat.
+`create-seats` reads `seats.conf`. Where Band has an owned-runtime transport for the runtime it
+creates the agent; where it does not, it prepares the worktree and identity and hands over to
+`run-seat`, which starts the process on this machine.
+
+**Every runtime starts through a wrapper that gives the seat its own configuration**, so seats
+inherit none of the operator's personal instructions, skills, plugins or tool servers — only
+their mandate. `claude-seat` sets a dedicated config directory and switches off the connectors
+attached to that sign-in. `opencode-seat` gives the seat a HOME of its own.
+
+That last one was not optional. OpenCode loads the operator's `~/.claude/CLAUDE.md` into every
+session, and it was caught by asking a seat to list the instruction documents it had been given:
+it quoted a personal working agreement back. A seat carrying that is not running on its mandate,
+and in a judged run the agreement is visible in the room and competes for the seat's attention.
+The config's `instructions` key only adds files, so a separate HOME is the only reliable
+suppression. Re-run that probe after changing any wrapper: ask a seat what instructions it has,
+and the only correct answer names its mandate and nothing else.
 
 Before a deliverable is called done, run `factory/bin/offline-check <dir>`: it builds the
 directory's Dockerfile and runs its gate with networking off, so anything that quietly reaches

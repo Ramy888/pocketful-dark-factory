@@ -38,6 +38,9 @@ copy() {  # copy() <source> <destination path relative to dest>
 }
 
 copy "$repo/factory/FACTORY.md" "FACTORY.md"
+# The seat roster is not documentation: FACTORY.md's crew table is generated from it and the
+# shipped tests read it, so a copy without it fails on its own paths.
+copy "$repo/factory/seats.conf" "factory/seats.conf"
 for m in "$repo"/factory/mandates/*.md; do
   copy "$m" "mandates/$(basename "$m")"
 done

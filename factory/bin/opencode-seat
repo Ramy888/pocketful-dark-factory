@@ -1,0 +1,25 @@
+#!/bin/sh
+# Runtime wrapper for factory seats on OpenCode, the sibling of claude-seat and codex-seat.
+#
+# OpenCode loads the operator's ~/.claude/CLAUDE.md into every session. A seat that inherits
+# a personal working agreement is not running on its mandate, and in a judged run that
+# agreement is visible in the room and competes with the mandate for the seat's attention.
+# The config key `instructions` only ADDS files, so the only reliable suppression is to give
+# the seat a HOME of its own that holds no such file.
+#
+# The provider config still has to be found, so XDG_CONFIG_HOME points back at the real one.
+# One-time setup: factory/bin/opencode-seat --setup
+: "${FACTORY_OPENCODE_HOME:=$HOME/.opencode-factory}"
+: "${FACTORY_OPENCODE_CONFIG:=${XDG_CONFIG_HOME:-$HOME/.config}}"
+
+if [ "$1" = "--setup" ]; then
+  mkdir -p "$FACTORY_OPENCODE_HOME"
+  echo "seat HOME:   $FACTORY_OPENCODE_HOME"
+  echo "config from: $FACTORY_OPENCODE_CONFIG/opencode"
+  [ -f "$FACTORY_OPENCODE_HOME/.claude/CLAUDE.md" ] &&
+    echo "WARNING: $FACTORY_OPENCODE_HOME/.claude/CLAUDE.md exists and will be inherited" >&2
+  exit 0
+fi
+
+mkdir -p "$FACTORY_OPENCODE_HOME"
+HOME="$FACTORY_OPENCODE_HOME" XDG_CONFIG_HOME="$FACTORY_OPENCODE_CONFIG" exec opencode "$@"

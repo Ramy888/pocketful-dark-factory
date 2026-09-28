@@ -1,0 +1,54 @@
+#!/usr/bin/env bash
+# Start one seat whose harness Band has no owned-runtime transport for. It runs as a process
+# on this machine and attaches to the room, so it lives as long as this command does.
+#
+# Usage: factory/bin/run-seat <role> [--check]
+#        --check   report what would run, start nothing
+#
+# Reads factory/seats.conf for the harness and model, the same rows the mandates are tested
+# against. The credential comes from the environment, never from a file in either repository:
+# the deliverable is public and its history cannot be unpublished.
+set -euo pipefail
+
+repo=$(git -C "$(dirname "$0")" rev-parse --show-toplevel)
+seats_conf="$repo/factory/seats.conf"
+role="${1:-}"; check=0
+[ "${2:-}" = "--check" ] && check=1
+[ -n "$role" ] || { echo "usage: run-seat <role> [--check]" >&2; exit 1; }
+
+row=$(grep -v '^[[:space:]]*#' "$seats_conf" | awk -F'|' -v r="$role" '$1==r {print; exit}')
+[ -n "$row" ] || { echo "run-seat: '$role' has no row in factory/seats.conf" >&2; exit 1; }
+harness=$(echo "$row" | cut -d'|' -f2)
+model=$(echo "$row" | cut -d'|' -f3)
+runtime=$(echo "$row" | cut -d'|' -f4)
+
+seat_root="${SEAT_ROOT:-$(dirname "${RESULT_REPO:-$repo}")/$(basename "${RESULT_REPO:-$repo}")-seats}"
+worktree="$seat_root/$role"
+
+echo "role:     $role"
+echo "harness:  $harness"
+echo "model:    $model"
+echo "runtime:  $runtime"
+echo "worktree: $worktree"
+
+[ "$runtime" = "jam" ] && {
+  echo "run-seat: '$role' is a Band-owned seat; create it with create-seats instead." >&2; exit 1; }
+[ -d "$worktree" ] || {
+  echo "run-seat: $worktree does not exist. Run create-seats first." >&2; exit 1; }
+
+case "$harness" in
+  OpenCode)
+    : "${FEATHERLESS_API_KEY:?set it first: . ~/.config/featherless/env}"
+    : "${OPENCODE_PORT:=4096}"
+    echo "server:   http://127.0.0.1:$OPENCODE_PORT  (loopback only, no auth unless"
+    echo "          OPENCODE_SERVER_PASSWORD is set — anyone who reaches it can run commands)"
+    if [ "$check" = 1 ]; then echo "(--check: nothing started)"; exit 0; fi
+    echo
+    echo "Start the server in another terminal, then attach the adapter:"
+    echo "  . ~/.config/featherless/env"
+    echo "  $repo/factory/bin/opencode-seat serve --hostname=127.0.0.1 --port=$OPENCODE_PORT"
+    echo "  python3 $repo/factory/bin/opencode-adapter.py $role"
+    ;;
+  *)
+    echo "run-seat: no launcher for harness '$harness'" >&2; exit 1 ;;
+esac

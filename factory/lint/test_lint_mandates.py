@@ -147,30 +147,47 @@ class SeatHeader(unittest.TestCase):
 
 
 class MandatesMatchReality(unittest.TestCase):
-    """A mandate declares the model its seat runs, and a reader compares that against the
-    room. Derive both from source rather than trusting them to be edited together."""
+    """A mandate declares the harness and model its seat runs, and a reader compares that
+    against the room. seats.conf is the one source of truth; drift is a test failure, not
+    something anyone has to remember."""
+
+    def _rows(self):
+        conf = next(d for d in (REPO / "factory" / "seats.conf", REPO / "seats.conf")
+                    if d.is_file())
+        rows = {}
+        for line in conf.read_text().splitlines():
+            line = line.strip()
+            if line and not line.startswith("#"):
+                role, harness, model, runtime = line.split("|")
+                rows[role] = (harness, model, runtime)
+        return rows
 
     def _declared(self, role, field):
         text = (MANDATES / f"{role}.md").read_text()
         m = re.search(rf"(?im)^[-*_ \t]*{field}[*_ \t]*:[*_ \t]*(.+?)\s*$", text)
         return m.group(1) if m else None
 
-    def test_every_mandate_declares_harness_and_model(self):
-        for role in ("coordinator", "implementer", "verifier"):
-            for field in ("Harness", "Model"):
-                self.assertIsNotNone(self._declared(role, field),
-                                     f"{role}.md has no {field}: line")
+    def test_seats_conf_defines_at_least_three_seats(self):
+        self.assertGreaterEqual(len(self._rows()), 3)
 
-    def test_declared_model_is_the_one_create_seats_passes(self):
-        script = BIN / "create-seats"
-        for role in ("coordinator", "implementer", "verifier"):
-            actual = subprocess.run(
-                ["bash", "-c", f'source_model() {{ :; }}; '
-                 f'eval "$(sed -n "/^model() /p" {script!s})"; model {role}'],
-                capture_output=True, text=True).stdout.strip()
-            self.assertTrue(actual, f"could not read model() for {role}")
-            self.assertEqual(self._declared(role, "Model"), actual,
-                             f"{role}.md declares a different model than create-seats passes")
+    def test_every_seat_has_a_mandate(self):
+        for role in self._rows():
+            self.assertTrue((MANDATES / f"{role}.md").is_file(),
+                            f"seats.conf names {role}, but mandates/{role}.md is missing")
+
+    def test_mandate_headers_match_seats_conf(self):
+        for role, (harness, model, _runtime) in self._rows().items():
+            self.assertEqual(self._declared(role, "Harness"), harness,
+                             f"{role}.md declares a different harness than seats.conf")
+            self.assertEqual(self._declared(role, "Model"), model,
+                             f"{role}.md declares a different model than seats.conf")
+
+    def test_seats_do_not_all_share_one_model(self):
+        """The verifier exists to not share the builder's blind spots. Same model
+        everywhere quietly removes that, and nothing else would notice."""
+        models = [m for _h, m, _r in self._rows().values()]
+        self.assertGreater(len(set(models)), 1,
+                           "every seat runs the same model; the independent check is not independent")
 
 
 class RealMandates(unittest.TestCase):

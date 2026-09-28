@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# Create the factory's seats as Jam-owned headless Claude Code or Codex agents. Each seat gets its own
-# git worktree and its mandate as a live-linked owner-instructions file.
+# Create the factory's seats. Each gets its own git worktree, its own git identity, and its
+# mandate as a live-linked owner-instructions file. Which harness and model a seat runs is
+# read from factory/seats.conf, never hardcoded here.
 # Usage: factory/bin/create-seats [role...]   (default: every mandate in factory/mandates)
 # Env:   RESULT_REPO  the repository the seats commit their work to. Mandates always come
 #                     from this factory; only the work goes there. Default: this factory's
@@ -14,13 +15,7 @@
 #                     session that already has a seat is undefined, so a run that needs
 #                     seats in a different working copy gets its own prefix instead of
 #                     overwriting the seats a previous run configured.
-#        CODEX_ROLES  roles that run on Codex instead of Claude Code (default: none).
-#                     A judged run cannot be re-dispatched, so a seat that stops on a
-#                     provider usage limit mid-run costs the whole stage. Opt a role in
-#                     deliberately (CODEX_ROLES=verifier) when a fresh window makes the
-#                     cross-family check worth that risk.
-#        CODEX_MODEL / CODEX_EFFORT  model and reasoning effort for Codex seats
-#                     (default: gpt-5.6-terra / high)
+#        CODEX_EFFORT reasoning effort for a Codex-harness seat (default: high)
 #        SKIP_JAM     prepare the worktrees and seat identities but create no agents.
 #                     Creating an agent is permanent — Jam has no command to delete one —
 #                     so rebuilding a working copy for a second run uses this rather than
@@ -57,15 +52,15 @@ description() {
   esac
 }
 
-# The exact id, not the `opus`/`sonnet` alias: each mandate has to declare the model its
-# seat runs, and a reader comparing the mandate against the room must find the same string
-# in both. If a runtime ever rejects an id, it fails loudly here at creation time, which is
-# the cheap failure. A mandate that quietly disagrees with reality is the expensive one.
-model() { case "$1" in coordinator|verifier) echo claude-opus-5 ;; *) echo claude-sonnet-5 ;; esac; }
+# Harness, model and runtime come from factory/seats.conf, which the mandates are tested
+# against. Nothing here hardcodes a model: a mandate and its launcher cannot disagree.
+seats_conf="$repo/factory/seats.conf"
+row() { grep -v '^[[:space:]]*#' "$seats_conf" | awk -F'|' -v r="$1" '$1==r {print; exit}'; }
+field() { row "$1" | cut -d'|' -f"$2"; }
+harness() { field "$1" 2; }
+model()   { field "$1" 3; }
+runtime() { field "$1" 4; }
 
-# A seat checked by a different model family than the one that built the work catches
-# blind spots that same-family review shares.
-on_codex() { case " ${CODEX_ROLES-} " in *" $1 "*) return 0 ;; *) return 1 ;; esac; }
 
 if [[ $# -eq 0 ]]; then
   for m in "$repo"/factory/mandates/*.md; do set -- "$@" "$(basename "$m" .md)"; done
@@ -94,15 +89,27 @@ for role in "$@"; do
   git -C "$worktree" config --worktree user.name "$role"
   git -C "$worktree" config --worktree user.email "$role@${SEAT_EMAIL_DOMAIN:-factory.test}"
 
-  if on_codex "$role"; then
-    runtime=(--transport codex-app-server --spawn-command "$repo/factory/bin/codex-seat"
-             --runtime-model "${CODEX_MODEL:-gpt-5.6-terra}" --runtime-effort "${CODEX_EFFORT:-high}")
-    echo "== $role (codex) in $worktree"
-  else
-    runtime=(--transport claude-code-cli --spawn-command "$repo/factory/bin/claude-seat"
-             --runtime-model "$(model "$role")")
-    echo "== $role (claude $(model "$role")) in $worktree"
+  seat_harness=$(harness "$role"); seat_model=$(model "$role"); seat_runtime=$(runtime "$role")
+  if [[ -z "$seat_harness" ]]; then
+    echo "create-seats: '$role' has no row in factory/seats.conf" >&2; exit 1
   fi
+  echo "== $role ($seat_harness $seat_model) in $worktree"
+
+  # Band owns a runtime only for the harnesses it has a transport for. Anything else is a
+  # process this machine runs and attaches, so creating a Band agent here would make a seat
+  # with nothing behind it.
+  if [[ "$seat_runtime" != "jam" ]]; then
+    echo "   worktree and identity ready. This harness has no Band-owned transport, so start"
+    echo "   it yourself:  factory/bin/run-seat $role"
+    continue
+  fi
+
+  case "$seat_harness" in
+    Codex)  runtime=(--transport codex-app-server --spawn-command "$repo/factory/bin/codex-seat"
+                     --runtime-model "$seat_model" --runtime-effort "${CODEX_EFFORT:-high}") ;;
+    *)      runtime=(--transport claude-code-cli --spawn-command "$repo/factory/bin/claude-seat"
+                     --runtime-model "$seat_model") ;;
+  esac
   if [[ -n "${SKIP_JAM:-}" ]]; then
     echo "   worktree and identity ready; no agent created (SKIP_JAM)"
     continue
