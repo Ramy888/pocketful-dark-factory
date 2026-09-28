@@ -24,9 +24,17 @@ model was the one that cited the file and line, named the exact input that break
 the one-character fix. A model that merely agrees something is wrong is not useful in that seat.
 
 The earlier build ran all three seats on one vendor, with the verifier optionally on a second.
-That was abandoned for a plainer reason than quality: a subscription runtime that hits a usage
-ceiling mid-run cannot be restarted, and a run that cannot be re-dispatched loses the whole
-deliverable. Per-request inference has no such ceiling.
+That was abandoned for a plainer reason than quality: a subscription runtime hits a rolling
+usage window you cannot see coming, and a run that cannot be re-dispatched loses the whole
+deliverable when it does.
+
+Per-request inference does not remove that risk, it changes its shape. There is still a
+ceiling, and more than one: what is left to spend, and how many seats may call at once. The
+difference is that what is left to spend is a figure you can read before you dispatch and
+divide by the cost of a rehearsal. That is the whole argument: not that the run cannot stall,
+but that you can find out beforehand whether it will. Measure a rehearsal
+with `opencode stats`, multiply by the shape of the real run, and compare. If it does not fit,
+that is a decision to take before the dispatch, not a discovery halfway through.
 
 Each seat runs in its own git worktree (`seat/<role>` branch), so the verifier always tests the
 exact handed-off commit, never the implementer's working copy. Each worktree is configured with
@@ -123,6 +131,12 @@ and a real stall runs to the end of the job unnoticed. A test covers this specif
 Then, in Jam Desktop, open a room, add the three seats, and post your task and its
 specification, mentioning the coordinator.
 Before changing any mandate, run `factory/lint/lint_mandates.py factory/mandates/*.md --spec <your spec files>`.
+
+**Changing what a seat runs is two steps:** edit its row in `seats.conf`, then
+`factory/bin/sync-mandate-headers` to rewrite the mandate headers from it (`--check` reports
+drift and exits non-zero). That is also the way back: rewrite the three rows to a runtime you
+have already proven, run the sync, and the seats change with them. It was tested in that
+direction, not assumed.
 
 The seats read these mandates live, and a deliverable carries copies of them at its root, so
 the two drift apart the moment one is edited — and the copy is the one a reader judges.

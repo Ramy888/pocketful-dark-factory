@@ -1,0 +1,42 @@
+#!/usr/bin/env python3
+"""Rewrite each mandate's `Harness:` and `Model:` lines from factory/seats.conf.
+
+seats.conf is the source of truth and a test fails when a mandate disagrees with it, so
+changing a seat's runtime or model is two steps: edit the row, run this. --check reports
+what would change and exits non-zero, for a gate.
+"""
+import pathlib, re, subprocess, sys
+
+repo = pathlib.Path(subprocess.run(
+    ["git", "-C", str(pathlib.Path(__file__).resolve().parent), "rev-parse", "--show-toplevel"],
+    capture_output=True, text=True, check=True).stdout.strip())
+check = "--check" in sys.argv
+
+rows = {}
+for line in (repo / "factory" / "seats.conf").read_text().splitlines():
+    line = line.strip()
+    if line and not line.startswith("#"):
+        role, harness, model, runtime = line.split("|")
+        rows[role] = (harness, model)
+
+changed = 0
+for role, (harness, model) in rows.items():
+    p = repo / "factory" / "mandates" / f"{role}.md"
+    if not p.is_file():
+        print(f"seats.conf names {role}, but mandates/{role}.md is missing", file=sys.stderr)
+        sys.exit(1)
+    before = p.read_text()
+    after = re.sub(r"(?im)^Harness:.*$", f"Harness: {harness}", before, count=1)
+    after = re.sub(r"(?im)^Model:.*$", f"Model: {model}", after, count=1)
+    if after == before:
+        continue
+    changed += 1
+    print(f"{'would update' if check else 'updated'}: mandates/{role}.md -> {harness} / {model}")
+    if not check:
+        p.write_text(after)
+
+if check and changed:
+    print(f"{changed} mandate(s) disagree with seats.conf", file=sys.stderr)
+    sys.exit(1)
+if not changed:
+    print("mandates already match seats.conf")

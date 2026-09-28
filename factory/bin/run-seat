@@ -1,6 +1,10 @@
 #!/usr/bin/env bash
-# Start one seat whose harness Band has no owned-runtime transport for. It runs as a process
-# on this machine and attaches to the room, so it lives as long as this command does.
+# Start one seat whose runtime Band has no transport for. It runs as a process on this machine
+# and attaches to the room, so it lives as long as this command does.
+#
+# NOTE: every row in seats.conf is currently `jam`, so nothing uses this today. It is kept
+# because seats.conf can express an `adapter` row and create-seats hands those to it; delete
+# both together if that stops being true.
 #
 # Usage: factory/bin/run-seat <role> [--check]
 #        --check   report what would run, start nothing
