@@ -1,0 +1,8 @@
+#!/bin/sh
+# Runtime wrapper for factory seats on Codex: run Codex against a dedicated home directory so
+# seats inherit none of the operator's personal Codex config, instructions or tool servers,
+# while still using a normal ChatGPT login.
+# One-time setup: CODEX_HOME=~/.codex-factory codex login
+: "${FACTORY_CODEX_HOME:=$HOME/.codex-factory}"
+mkdir -p "$FACTORY_CODEX_HOME"
+CODEX_HOME="$FACTORY_CODEX_HOME" exec codex "$@"

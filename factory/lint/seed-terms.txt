@@ -1,0 +1,58 @@
+# Placeholder guard terms, used until the real specification is available.
+# The authoritative guard is --spec: it derives paths, field names, error codes and
+# test ids from the specification itself. This list only covers domain vocabulary
+# and event names that a mandate must never contain. One term per line, matched as a
+# whole word, case-insensitive. Lines starting with '#' are ignored.
+
+# event and grading vocabulary
+hackathon
+lablab
+dark factory
+harness
+playwright
+clean-room
+pocketful
+tablekeeper
+venmo
+opentable
+
+# payments domain
+wallet
+wallets
+payment
+payments
+transfer
+transfers
+balance
+balances
+ledger
+money
+funds
+currency
+cents
+deposit
+deposits
+withdraw
+withdrawal
+withdrawals
+payer
+payee
+transaction
+transactions
+account
+accounts
+
+# reservations domain
+reservation
+reservations
+booking
+bookings
+restaurant
+restaurants
+diner
+diners
+table
+tables
+seating
+waitlist
+party size

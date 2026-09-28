@@ -81,8 +81,24 @@ the internet fails here instead of on the grader's machine. Pull the base image 
 
 Run `factory/bin/watchdog` alongside a long job. A seat can end a turn on a runtime error after
 staging its reply, leaving the message queued and the job silently stopped; the watchdog spots a
-seat that has queued work but no activity and restarts it, which redelivers the message.
+seat that has queued work but no activity and restarts it, which redelivers the message. It gives
+up after `--max-restarts` and prints an ALERT, because a restart cannot fix a provider usage limit.
+
+This matters most where no one is watching. A run that cannot be restarted from the outside has
+the watchdog as its only recovery, so it is part of the factory rather than an operator's
+convenience.
+
+**Pass it the same prefix as the seats:** `SEAT_PREFIX=x create-seats` pairs with
+`watchdog --prefix x`. Mismatch them and every inbox reads empty, every seat is reported healthy,
+and a real stall runs to the end of the job unnoticed. A test covers this specifically.
 
 Then, in Jam Desktop, open a room, add the three seats, and post your task and its
 specification, mentioning the coordinator.
 Before changing any mandate, run `factory/lint/lint_mandates.py factory/mandates/*.md --spec <your spec files>`.
+
+The seats read these mandates live, and a deliverable carries copies of them at its root, so
+the two drift apart the moment one is edited — and the copy is the one a reader judges.
+`factory/bin/assemble-result <repo>` syncs them, along with this file and the tooling it
+mentions; `--check` reports drift without copying and exits non-zero, which is the thing to run
+before a final push. The tooling ships because this file describes it: a reader told to run
+`factory/bin/watchdog` should find it.

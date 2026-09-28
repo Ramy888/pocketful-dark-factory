@@ -1,0 +1,150 @@
+#!/usr/bin/env python3
+"""Restart a factory seat whose queued work has stalled.
+
+A seat can end a turn on a runtime error after staging its reply: the reply is never
+posted, the message stays queued, and nothing else notices. This watchdog treats
+"a message has been queued while the seat did nothing for a while" as a stall and
+restarts that seat, which redelivers the message. A seat that is still working keeps
+emitting activity, so it is left alone.
+
+A restart cannot fix every stall: a provider usage limit, an expired login or a dead
+runtime survives it. After --max-restarts attempts on the same queued work the watchdog
+stops restarting that seat and prints an ALERT, so a person looks instead of a loop
+hammering a seat that cannot recover. New queued work starts a fresh count.
+
+Usage: watchdog [--roles a,b,c] [--idle-seconds N] [--interval N] [--max-restarts N]
+                [--state PATH] [--once] [--dry-run]
+Env:   JAM   path to the jam binary (default: jam)
+"""
+
+import argparse
+import json
+import os
+import re
+import subprocess
+import sys
+import time
+from datetime import datetime
+
+def state_file(prefix="factory"):
+    return os.path.expanduser(f"~/.jam/{prefix}-watchdog.json")
+
+
+DEFAULT_STATE = state_file()
+
+JAM = os.environ.get("JAM", "jam")
+MESSAGE_ID = re.compile(r"^\[[0-9a-f-]{36}\]\s+([0-9a-f-]{36})\b", re.MULTILINE)
+ACTIVITY_TIME = re.compile(r"^(\d{4}-\d{2}-\d{2} \d{2}:\d{2})\b", re.MULTILINE)
+
+
+def jam(*args):
+    """Run jam and return stdout; an unreachable daemon yields an empty string."""
+    try:
+        done = subprocess.run([JAM, *args], capture_output=True, text=True, timeout=60)
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        print(f"watchdog: jam {' '.join(args)} failed: {exc}", file=sys.stderr)
+        return ""
+    return done.stdout
+
+
+def parse_inbox(text):
+    """Message ids waiting in a seat's inbox."""
+    return MESSAGE_ID.findall(text)
+
+
+def parse_last_activity(text):
+    """Newest activity timestamp, or None when the seat has no recorded activity."""
+    stamps = [datetime.strptime(s, "%Y-%m-%d %H:%M") for s in ACTIVITY_TIME.findall(text)]
+    return max(stamps) if stamps else None
+
+
+def is_stalled(queued, last_activity, now, idle_seconds):
+    if not queued:
+        return False
+    if last_activity is None:
+        return True
+    return (now - last_activity).total_seconds() >= idle_seconds
+
+
+def load_state(path):
+    try:
+        with open(path) as fh:
+            return json.load(fh)
+    except (OSError, ValueError):
+        return {}
+
+
+def save_state(path, state):
+    try:
+        os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
+        with open(path, "w") as fh:
+            json.dump(state, fh)
+    except OSError as exc:
+        print(f"watchdog: cannot write {path}: {exc}", file=sys.stderr)
+
+
+def check(roles, idle_seconds, dry_run, state=None, max_restarts=2, prefix="factory"):
+    """One pass over the seats. Returns the roles found stalled."""
+    state = {} if state is None else state
+    stalled = []
+    for role in roles:
+        session = f"{prefix}-{role}"
+        queued = parse_inbox(jam("--session", session, "inbox"))
+        if not queued:
+            state.pop(role, None)
+            continue
+        last = parse_last_activity(jam("activity", "list", "--peer", f"default/{session}"))
+        if not is_stalled(queued, last, datetime.now(), idle_seconds):
+            continue
+        stalled.append(role)
+        seen = "no recorded activity" if last is None else f"idle since {last:%H:%M}"
+        episode = state.get(role, {})
+        if episode.get("queued") != queued:
+            episode = {"queued": queued, "restarts": 0}
+        if episode["restarts"] >= max_restarts:
+            print(f"watchdog: ALERT {role} is still stuck after {episode['restarts']} "
+                  f"restart(s) ({len(queued)} queued, {seen}). A restart cannot fix this "
+                  f"one — check the seat's logs for a usage limit or a login problem.")
+            state[role] = episode
+            continue
+        if dry_run:
+            print(f"watchdog: would restart {role} ({len(queued)} queued, {seen})")
+        else:
+            print(f"watchdog: restarting {role} ({len(queued)} queued, {seen})")
+            jam("--session", session, "restart")
+            episode["restarts"] += 1
+        state[role] = episode
+    return stalled
+
+
+def main(argv=None):
+    parser = argparse.ArgumentParser(description=__doc__,
+                                     formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser.add_argument("--roles", default="coordinator,implementer,verifier")
+    parser.add_argument("--idle-seconds", type=int, default=300)
+    parser.add_argument("--interval", type=int, default=60)
+    parser.add_argument("--max-restarts", type=int, default=2)
+    # Must match the SEAT_PREFIX the seats were created with, or every inbox reads empty
+    # and every seat looks healthy.
+    parser.add_argument("--prefix", default="factory")
+    parser.add_argument("--state", default=None)
+    parser.add_argument("--once", action="store_true")
+    parser.add_argument("--dry-run", action="store_true")
+    args = parser.parse_args(argv)
+
+    roles = [r.strip() for r in args.roles.split(",") if r.strip()]
+    # One state file per prefix, so two watchdogs over two sets of seats do not overwrite
+    # each other's restart counts and give each other free retries.
+    state_path = args.state or state_file(args.prefix)
+    state = load_state(state_path)
+    while True:
+        check(roles, args.idle_seconds, args.dry_run, state, args.max_restarts, args.prefix)
+        save_state(state_path, state)
+        sys.stdout.flush()
+        if args.once:
+            return 0
+        time.sleep(args.interval)
+
+
+if __name__ == "__main__":
+    sys.exit(main())

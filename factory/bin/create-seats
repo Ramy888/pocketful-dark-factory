@@ -1,0 +1,118 @@
+#!/usr/bin/env bash
+# Create the factory's seats as Jam-owned headless Claude Code or Codex agents. Each seat gets its own
+# git worktree and its mandate as a live-linked owner-instructions file.
+# Usage: factory/bin/create-seats [role...]   (default: every mandate in factory/mandates)
+# Env:   RESULT_REPO  the repository the seats commit their work to. Mandates always come
+#                     from this factory; only the work goes there. Default: this factory's
+#                     own repository, which is what you want while rehearsing. Point it at
+#                     the deliverable's repository for a real run, and keep the two apart —
+#                     a reader judging the work should see the band's commits, not the
+#                     factory's development history.
+#        SEAT_ROOT    worktree parent (default: <result repo>-seats beside that repository)
+#        SEAT_PREFIX  session prefix, one scope per seat (default: factory). Jam has no
+#                     command to delete or re-point an agent, and creating one again on a
+#                     session that already has a seat is undefined, so a run that needs
+#                     seats in a different working copy gets its own prefix instead of
+#                     overwriting the seats a previous run configured.
+#        CODEX_ROLES  roles that run on Codex instead of Claude Code (default: none).
+#                     A judged run cannot be re-dispatched, so a seat that stops on a
+#                     provider usage limit mid-run costs the whole stage. Opt a role in
+#                     deliberately (CODEX_ROLES=verifier) when a fresh window makes the
+#                     cross-family check worth that risk.
+#        CODEX_MODEL / CODEX_EFFORT  model and reasoning effort for Codex seats
+#                     (default: gpt-5.6-terra / high)
+#        SKIP_JAM     prepare the worktrees and seat identities but create no agents.
+#                     Creating an agent is permanent — Jam has no command to delete one —
+#                     so rebuilding a working copy for a second run uses this rather than
+#                     minting a third set of seats. Also how this script is tested.
+set -euo pipefail
+
+repo=$(git -C "$(dirname "$0")" rev-parse --show-toplevel)
+
+# Where the work lands. A worktree needs a commit to branch from, so an empty repository
+# is refused here rather than half-way through creating the seats.
+work_repo=$(git -C "${RESULT_REPO:-$repo}" rev-parse --show-toplevel 2>/dev/null) || {
+  echo "create-seats: RESULT_REPO '${RESULT_REPO:-$repo}' is not a git repository" >&2; exit 1; }
+git -C "$work_repo" rev-parse --verify --quiet HEAD >/dev/null || {
+  echo "create-seats: '$work_repo' has no commit yet, so a seat worktree cannot branch" >&2
+  echo "             from it. Commit something there first, even just a README." >&2; exit 1; }
+
+seat_root="${SEAT_ROOT:-$(dirname "$work_repo")/$(basename "$work_repo")-seats}"
+
+# Per-worktree config is off by default, and without it every seat identity below lands in
+# the one shared config file instead of its own worktree.
+git -C "$work_repo" config extensions.worktreeConfig true
+
+echo "work lands in: $work_repo"
+if [[ "$work_repo" == "$repo" ]]; then
+  echo "   (the factory's own repository — set RESULT_REPO for a real run)"
+fi
+
+description() {
+  case "$1" in
+    coordinator) echo "Plans the work, sequences it, keeps the decisions log and reports to the owner." ;;
+    implementer) echo "Builds one work item at a time and hands off reproducible evidence." ;;
+    verifier)    echo "Derives acceptance checks from the specification, reproduces every handoff, holds the veto." ;;
+    *)           echo "Factory seat: $1." ;;
+  esac
+}
+
+# The exact id, not the `opus`/`sonnet` alias: each mandate has to declare the model its
+# seat runs, and a reader comparing the mandate against the room must find the same string
+# in both. If a runtime ever rejects an id, it fails loudly here at creation time, which is
+# the cheap failure. A mandate that quietly disagrees with reality is the expensive one.
+model() { case "$1" in coordinator|verifier) echo claude-opus-5 ;; *) echo claude-sonnet-5 ;; esac; }
+
+# A seat checked by a different model family than the one that built the work catches
+# blind spots that same-family review shares.
+on_codex() { case " ${CODEX_ROLES-} " in *" $1 "*) return 0 ;; *) return 1 ;; esac; }
+
+if [[ $# -eq 0 ]]; then
+  for m in "$repo"/factory/mandates/*.md; do set -- "$@" "$(basename "$m" .md)"; done
+fi
+
+for role in "$@"; do
+  mandate="$repo/factory/mandates/$role.md"
+  [[ -f "$mandate" ]] || { echo "create-seats: no mandate for '$role'" >&2; exit 1; }
+
+  worktree="$seat_root/$role"
+  if [[ ! -d "$worktree" ]]; then
+    if git -C "$work_repo" show-ref --verify --quiet "refs/heads/seat/$role"; then
+      git -C "$work_repo" worktree add "$worktree" "seat/$role"
+    else
+      git -C "$work_repo" worktree add -b "seat/$role" "$worktree" HEAD
+    fi
+  fi
+
+  # A seat commits as itself, so the history shows which seat produced which change.
+  # Sharing one identity makes every commit look like the owner's, which is the opposite
+  # of the evidence a reader needs.
+  #
+  # `--worktree` is not optional here. Linked worktrees share one config file, so a plain
+  # `git -C "$worktree" config user.name` writes to the repository, and the last seat in
+  # this loop would rename every other seat and the owner along with them.
+  git -C "$worktree" config --worktree user.name "$role"
+  git -C "$worktree" config --worktree user.email "$role@${SEAT_EMAIL_DOMAIN:-factory.test}"
+
+  if on_codex "$role"; then
+    runtime=(--transport codex-app-server --spawn-command "$repo/factory/bin/codex-seat"
+             --runtime-model "${CODEX_MODEL:-gpt-5.6-terra}" --runtime-effort "${CODEX_EFFORT:-high}")
+    echo "== $role (codex) in $worktree"
+  else
+    runtime=(--transport claude-code-cli --spawn-command "$repo/factory/bin/claude-seat"
+             --runtime-model "$(model "$role")")
+    echo "== $role (claude $(model "$role")) in $worktree"
+  fi
+  if [[ -n "${SKIP_JAM:-}" ]]; then
+    echo "   worktree and identity ready; no agent created (SKIP_JAM)"
+    continue
+  fi
+
+  jam agent create --json \
+    --session "${SEAT_PREFIX:-factory}-$role" \
+    "${runtime[@]}" \
+    --name "$role" \
+    --description "$(description "$role")" \
+    --cwd "$worktree" \
+    --instructions-file "$mandate"
+done

@@ -1,0 +1,8 @@
+#!/bin/sh
+# Runtime wrapper for factory seats: run Claude Code against a dedicated config directory so
+# seats inherit none of the operator's personal CLAUDE.md, skills, hooks or MCP servers, while
+# still using a normal Claude login. Connectors attached to the Claude account are switched off
+# too: a seat's tools are Claude Code's core tools plus the room connection, nothing else.
+# One-time setup: see factory/FACTORY.md ("Stand it up yourself").
+: "${FACTORY_CLAUDE_CONFIG_DIR:=$HOME/.claude-factory}"
+CLAUDE_CONFIG_DIR="$FACTORY_CLAUDE_CONFIG_DIR" ENABLE_CLAUDEAI_MCP_SERVERS=false exec claude "$@"

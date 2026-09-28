@@ -1,0 +1,70 @@
+#!/usr/bin/env bash
+# Copy this factory into a deliverable's repository, where a reader expects it at the root.
+# Usage: factory/bin/assemble-result <repo> [--no-tooling] [--check]
+#        --no-tooling  ship FACTORY.md and mandates/ only, no scripts
+#        --check       report what would change and exit non-zero if anything would; copies
+#                      nothing. Run this before a final push.
+#
+# The seats read the mandates from this factory, live. The deliverable carries copies. A
+# one-off copy therefore goes stale the moment a mandate is edited, and the stale version is
+# the one a reader judges, so this runs again as the last step before every push.
+set -euo pipefail
+
+repo=$(git -C "$(dirname "$0")" rev-parse --show-toplevel)
+dest=""; tooling=1; check=0
+for arg in "$@"; do
+  case "$arg" in
+    --no-tooling) tooling=0 ;;
+    --check)      check=1 ;;
+    -*)           echo "assemble-result: unknown option '$arg'" >&2; exit 1 ;;
+    *)            dest="$arg" ;;
+  esac
+done
+[[ -n "$dest" ]] || { echo "usage: assemble-result <repo> [--no-tooling] [--check]" >&2; exit 1; }
+[[ -d "$dest" ]] || { echo "assemble-result: '$dest' is not a directory" >&2; exit 1; }
+
+changed=0
+copy() {  # copy() <source> <destination path relative to dest>
+  local src="$1" rel="$2" target="$dest/$2"
+  if [[ -f "$target" ]] && cmp -s "$src" "$target"; then return 0; fi
+  changed=1
+  if (( check )); then
+    echo "would update: $rel"
+  else
+    mkdir -p "$(dirname "$target")"
+    cp "$src" "$target"
+    echo "updated: $rel"
+  fi
+}
+
+copy "$repo/factory/FACTORY.md" "FACTORY.md"
+for m in "$repo"/factory/mandates/*.md; do
+  copy "$m" "mandates/$(basename "$m")"
+done
+
+# The rubric asks whether another team could stand this factory up from FACTORY.md and the
+# mandates. They describe scripts, so shipping the scripts is what makes that true.
+if (( tooling )); then
+  for f in "$repo"/factory/bin/*; do
+    [[ -f "$f" ]] && copy "$f" "factory/bin/$(basename "$f")"
+  done
+  for f in "$repo"/factory/lint/*.py "$repo"/factory/lint/*.txt; do
+    [[ -f "$f" ]] && copy "$f" "factory/lint/$(basename "$f")"
+  done
+fi
+
+# FACTORY.md refers to scripts by their path in this repository. Without them the reader is
+# sent to files that are not there, which is worse than not mentioning them.
+if (( ! tooling )) && grep -q 'factory/bin/' "$repo/factory/FACTORY.md"; then
+  echo "assemble-result: FACTORY.md points at factory/bin/, which --no-tooling leaves out." >&2
+  echo "                 Ship the tooling, or reword FACTORY.md first." >&2
+  exit 1
+fi
+
+if (( check )); then
+  if (( changed )); then
+    echo "assemble-result: '$dest' is out of date; run without --check"
+    exit 1
+  fi
+  echo "assemble-result: '$dest' is up to date"
+fi
