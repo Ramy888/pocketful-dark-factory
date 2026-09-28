@@ -41,6 +41,26 @@ exact handed-off commit, never the implementer's working copy. Each worktree is 
 its own git identity, so the history says which seat wrote which change instead of attributing
 everything to a single committer.
 
+## What the seats are allowed to do, and why it is not tighter
+
+A seat runs shell commands without being asked. That is deliberate, and it is not a setting
+anyone forgot to tighten.
+
+The runtime offers three postures: ask before each action, allow all, or deny all. `ask` stalls
+until a human answers, and in a run whose whole premise is that nobody answers, a stall is the
+end of the run. `deny` leaves a seat that cannot build or test anything. That leaves one.
+
+The finer-grained posture some runtimes offer — approve file edits, prompt for commands — does
+not help either, and it is worth saying why, because it sounds like the obvious middle ground.
+A seat's evidence *is* commands: it builds, runs the suite, pastes the real output. Prompting on
+commands prompts on every handoff, which is the same stall by a slower route.
+
+Container isolation is not available for this runtime at all; it is refused outright. So the
+blast radius is managed by where a seat runs, not by what it is permitted to do: each works in
+its own checkout, commits only there, and nothing it does is outside version control. Run the
+band on a machine where that is an acceptable worst case. This was measured, not assumed — each
+posture was probed against the runtime before the seats were created.
+
 ## Routing
 
 - Seats address only the seat that must act next: coordinator → implementer (assignment),
