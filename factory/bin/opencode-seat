@@ -27,6 +27,8 @@ shift || true
 
 model=$(grep -v '^[[:space:]]*#' "$repo/factory/seats.conf" \
         | awk -F'|' -v r="$role" '$1==r {print $3; exit}')
+mandate="$repo/factory/mandates/$role.md"
+[ -f "$mandate" ] || { echo "opencode-seat: no mandate at $mandate" >&2; exit 1; }
 [ -n "$model" ] || { echo "opencode-seat: '$role' has no row in factory/seats.conf" >&2; exit 1; }
 [ -f "$OPERATOR_OPENCODE_CONFIG" ] || {
   echo "opencode-seat: no provider config at $OPERATOR_OPENCODE_CONFIG" >&2; exit 1; }
@@ -36,19 +38,23 @@ seat_config="$seat_home/.config/opencode"
 mkdir -p "$seat_config"
 
 # Regenerated every start: the operator's provider block, plus this seat's default model.
-python3 - "$OPERATOR_OPENCODE_CONFIG" "$seat_config/opencode.json" "$model" <<'PY'
+python3 - "$OPERATOR_OPENCODE_CONFIG" "$seat_config/opencode.json" "$model" "$mandate" <<'PY'
 import json, sys
-src, dst, model = sys.argv[1], sys.argv[2], sys.argv[3]
+src, dst, model, mandate = sys.argv[1], sys.argv[2], sys.argv[3], sys.argv[4]
 cfg = json.load(open(src))
 provider = cfg.get("provider", {})
 # seats.conf names the bare model; find the provider block that declares it.
 owner = next((p for p, v in provider.items() if model in (v.get("models") or {})), None)
 if owner is None:
     sys.exit(f"opencode-seat: no provider in {src} declares model {model!r}")
+# The transport that lets Band own this runtime does not inject owner instructions, so the
+# mandate is delivered here instead. It is a path, not a copy: editing the mandate changes
+# the seat, which is the property the rest of the factory depends on.
 out = {"$schema": cfg.get("$schema", "https://opencode.ai/config.json"),
-       "provider": provider, "model": f"{owner}/{model}"}
+       "provider": provider, "model": f"{owner}/{model}",
+       "instructions": [mandate]}
 json.dump(out, open(dst, "w"), indent=2)
-print(f"seat {dst}: model {owner}/{model}", file=sys.stderr)
+print(f"seat {dst}: model {owner}/{model}, mandate {mandate}", file=sys.stderr)
 PY
 chmod 600 "$seat_config/opencode.json"
 

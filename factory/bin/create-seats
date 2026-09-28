@@ -16,6 +16,11 @@
 #                     seats in a different working copy gets its own prefix instead of
 #                     overwriting the seats a previous run configured.
 #        CODEX_EFFORT reasoning effort for a Codex-harness seat (default: high)
+#        SEAT_NAME_PREFIX  prepended to each seat's display name (default: none). Band agent
+#                     names are unique per account and cannot be deleted, so a name a previous
+#                     run took is gone for good. NOTE for a submission: the grader matches each
+#                     seat in the room to a mandate file named after it, so a prefix here means
+#                     the mandate files carry the same prefix.
 #        SKIP_JAM     prepare the worktrees and seat identities but create no agents.
 #                     Creating an agent is permanent — Jam has no command to delete one —
 #                     so rebuilding a working copy for a second run uses this rather than
@@ -104,14 +109,19 @@ for role in "$@"; do
     continue
   fi
 
+  # Most runtimes take the mandate as owner instructions; the exceptions clear this.
+  instructions=(--instructions-file "$mandate")
   case "$seat_harness" in
     Codex)    runtime=(--transport codex-app-server --spawn-command "$repo/factory/bin/codex-seat"
                        --runtime-model "$seat_model" --runtime-effort "${CODEX_EFFORT:-high}") ;;
-    # ACP takes no model selector, so the seat's wrapper carries the model instead: it
-    # generates a config directory per role from seats.conf. Passing --runtime-model here
-    # is rejected by the transport before anything is even spawned.
+    # ACP takes neither a model selector nor owner instructions: it rejects the first
+    # before anything is spawned, and does not inject the second at all. The seat's wrapper
+    # carries both instead, generating a config directory per role that names the model from
+    # seats.conf and the mandate by path. The mandate stays live-linked either way — editing
+    # the file still changes the seat.
     OpenCode) runtime=(--transport acp --spawn-command "$repo/factory/bin/opencode-seat"
-                       --spawn-arg "$role" --spawn-arg acp) ;;
+                       --spawn-arg "$role" --spawn-arg acp)
+              instructions=() ;;
     *)        runtime=(--transport claude-code-cli --spawn-command "$repo/factory/bin/claude-seat"
                        --runtime-model "$seat_model") ;;
   esac
@@ -123,8 +133,8 @@ for role in "$@"; do
   jam agent create --json \
     --session "${SEAT_PREFIX:-factory}-$role" \
     "${runtime[@]}" \
-    --name "$role" \
+    --name "${SEAT_NAME_PREFIX:-}$role" \
     --description "$(description "$role")" \
     --cwd "$worktree" \
-    --instructions-file "$mandate"
+    ${instructions[@]+"${instructions[@]}"}
 done
