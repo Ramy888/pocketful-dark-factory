@@ -71,12 +71,24 @@ repository — a deliverable is public and its history cannot be unpublished.
 ```sh
 . ~/.config/featherless/env                   # or wherever the key lives
 factory/bin/create-seats                      # worktree, git identity and mandate per seat
-factory/bin/run-seat <role>                   # for a runtime Band cannot own; --check to dry-run
 ```
 
-`create-seats` reads `seats.conf`. Where Band has an owned-runtime transport for the runtime it
-creates the agent; where it does not, it prepares the worktree and identity and hands over to
-`run-seat`, which starts the process on this machine.
+`create-seats` reads `seats.conf`. Where Band has an owned-runtime transport it creates the
+agent; where it does not, it prepares the worktree and identity and hands over to `run-seat`,
+which starts the process on this machine and attaches it.
+
+**All three seats are Band-owned, over ACP.** That was worth finding. The documented route for
+an open-weights seat is a server plus an adapter process you run and supervise yourself, with
+tool calls auto-accepted because nothing is there to approve them. Band speaks ACP and the
+runtime serves it, so the seat is supervised like any other: the mandate is live-linked as its
+owner instructions, the watchdog can restart it, and no seat needs blanket permission to run
+shell commands. It was confirmed with `create --dry-run`, which probes the runtime, the
+protocol and the credential without creating anything.
+
+The one cost: ACP accepts no model selector, and it rejects one before the runtime is even
+spawned. So the model comes from configuration, which means a config directory per role rather
+than one shared file. `opencode-seat` generates each from `seats.conf` at start, so a seat's
+model still has exactly one source and cannot drift from its mandate.
 
 **Every runtime starts through a wrapper that gives the seat its own configuration**, so seats
 inherit none of the operator's personal instructions, skills, plugins or tool servers — only

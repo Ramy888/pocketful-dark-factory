@@ -1,25 +1,60 @@
-#!/bin/sh
+#!/usr/bin/env bash
 # Runtime wrapper for factory seats on OpenCode, the sibling of claude-seat and codex-seat.
+# Usage: opencode-seat <role> [opencode args...]      e.g. opencode-seat verifier acp
 #
-# OpenCode loads the operator's ~/.claude/CLAUDE.md into every session. A seat that inherits
-# a personal working agreement is not running on its mandate, and in a judged run that
-# agreement is visible in the room and competes with the mandate for the seat's attention.
-# The config key `instructions` only ADDS files, so the only reliable suppression is to give
-# the seat a HOME of its own that holds no such file.
+# Two jobs.
 #
-# The provider config still has to be found, so XDG_CONFIG_HOME points back at the real one.
-# One-time setup: factory/bin/opencode-seat --setup
-: "${FACTORY_OPENCODE_HOME:=$HOME/.opencode-factory}"
-: "${FACTORY_OPENCODE_CONFIG:=${XDG_CONFIG_HOME:-$HOME/.config}}"
+# 1. Isolation. OpenCode loads the operator's ~/.claude/CLAUDE.md into every session. A seat
+#    that inherits a personal working agreement is not running on its mandate, and in a judged
+#    run that agreement sits in the room competing for the seat's attention. The config key
+#    `instructions` only ADDS files, so the only reliable suppression is a HOME of its own.
+#
+# 2. One model per seat. The transport that lets Band own an OpenCode runtime does not accept
+#    a model selector, so the model has to come from configuration — which means a separate
+#    config directory per role, not one shared file. Each is generated here from seats.conf,
+#    so a seat's model still has exactly one source.
+#
+# The provider block is read from the operator's own opencode config, so the credential stays
+# wherever they keep it and is never copied into a repository.
+set -eu
 
-if [ "$1" = "--setup" ]; then
-  mkdir -p "$FACTORY_OPENCODE_HOME"
-  echo "seat HOME:   $FACTORY_OPENCODE_HOME"
-  echo "config from: $FACTORY_OPENCODE_CONFIG/opencode"
-  [ -f "$FACTORY_OPENCODE_HOME/.claude/CLAUDE.md" ] &&
-    echo "WARNING: $FACTORY_OPENCODE_HOME/.claude/CLAUDE.md exists and will be inherited" >&2
-  exit 0
+repo=$(git -C "$(dirname "$0")" rev-parse --show-toplevel)
+role="${1:?usage: opencode-seat <role> [opencode args...]}"
+shift || true
+
+: "${FACTORY_OPENCODE_HOME:=$HOME/.opencode-factory}"
+: "${OPERATOR_OPENCODE_CONFIG:=${XDG_CONFIG_HOME:-$HOME/.config}/opencode/opencode.json}"
+
+model=$(grep -v '^[[:space:]]*#' "$repo/factory/seats.conf" \
+        | awk -F'|' -v r="$role" '$1==r {print $3; exit}')
+[ -n "$model" ] || { echo "opencode-seat: '$role' has no row in factory/seats.conf" >&2; exit 1; }
+[ -f "$OPERATOR_OPENCODE_CONFIG" ] || {
+  echo "opencode-seat: no provider config at $OPERATOR_OPENCODE_CONFIG" >&2; exit 1; }
+
+seat_home="$FACTORY_OPENCODE_HOME/$role"
+seat_config="$seat_home/.config/opencode"
+mkdir -p "$seat_config"
+
+# Regenerated every start: the operator's provider block, plus this seat's default model.
+python3 - "$OPERATOR_OPENCODE_CONFIG" "$seat_config/opencode.json" "$model" <<'PY'
+import json, sys
+src, dst, model = sys.argv[1], sys.argv[2], sys.argv[3]
+cfg = json.load(open(src))
+provider = cfg.get("provider", {})
+# seats.conf names the bare model; find the provider block that declares it.
+owner = next((p for p, v in provider.items() if model in (v.get("models") or {})), None)
+if owner is None:
+    sys.exit(f"opencode-seat: no provider in {src} declares model {model!r}")
+out = {"$schema": cfg.get("$schema", "https://opencode.ai/config.json"),
+       "provider": provider, "model": f"{owner}/{model}"}
+json.dump(out, open(dst, "w"), indent=2)
+print(f"seat {dst}: model {owner}/{model}", file=sys.stderr)
+PY
+chmod 600 "$seat_config/opencode.json"
+
+if [ -f "$seat_home/.claude/CLAUDE.md" ]; then
+  echo "opencode-seat: $seat_home/.claude/CLAUDE.md exists and would be inherited" >&2
+  exit 1
 fi
 
-mkdir -p "$FACTORY_OPENCODE_HOME"
-HOME="$FACTORY_OPENCODE_HOME" XDG_CONFIG_HOME="$FACTORY_OPENCODE_CONFIG" exec opencode "$@"
+HOME="$seat_home" XDG_CONFIG_HOME="$seat_home/.config" exec opencode "$@"

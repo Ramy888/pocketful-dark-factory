@@ -105,10 +105,15 @@ for role in "$@"; do
   fi
 
   case "$seat_harness" in
-    Codex)  runtime=(--transport codex-app-server --spawn-command "$repo/factory/bin/codex-seat"
-                     --runtime-model "$seat_model" --runtime-effort "${CODEX_EFFORT:-high}") ;;
-    *)      runtime=(--transport claude-code-cli --spawn-command "$repo/factory/bin/claude-seat"
-                     --runtime-model "$seat_model") ;;
+    Codex)    runtime=(--transport codex-app-server --spawn-command "$repo/factory/bin/codex-seat"
+                       --runtime-model "$seat_model" --runtime-effort "${CODEX_EFFORT:-high}") ;;
+    # ACP takes no model selector, so the seat's wrapper carries the model instead: it
+    # generates a config directory per role from seats.conf. Passing --runtime-model here
+    # is rejected by the transport before anything is even spawned.
+    OpenCode) runtime=(--transport acp --spawn-command "$repo/factory/bin/opencode-seat"
+                       --spawn-arg "$role" --spawn-arg acp) ;;
+    *)        runtime=(--transport claude-code-cli --spawn-command "$repo/factory/bin/claude-seat"
+                       --runtime-model "$seat_model") ;;
   esac
   if [[ -n "${SKIP_JAM:-}" ]]; then
     echo "   worktree and identity ready; no agent created (SKIP_JAM)"
