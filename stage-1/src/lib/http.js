@@ -8,10 +8,12 @@ const { AppError } = require('./errors');
 // connection unframed and the client waiting for a close that never comes.
 //
 // HEAD gets Content-Length: 0, not the GET-equivalent length: Node never
-// writes body bytes for a HEAD response, and a client that takes a nonzero
-// Content-Length literally (curl's `-X HEAD`, unlike its `-I`/`--head`,
-// does not know to stop after headers) would otherwise hang or error
-// waiting for bytes that were never coming.
+// writes body bytes for a HEAD response either way, so this changes nothing
+// for a spec-compliant client (RFC 9110 §9.3.2: HEAD never has a body,
+// whatever Content-Length claims). It exists only to placate `curl -X HEAD`,
+// which -- unlike the correct `curl -I`/`--head` -- waits to read the
+// declared number of body bytes and hangs when none arrive. That is a quirk
+// of that one invocation, not a real framing problem this is fixing.
 function sendJson(res, status, payload) {
   const isHead = res.req && res.req.method === 'HEAD';
   const body = Buffer.from(JSON.stringify(payload), 'utf8');

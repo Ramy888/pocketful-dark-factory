@@ -99,9 +99,12 @@ async function validateFixture(fixture) {
     pendingUsers.push(record);
   }
 
+  const seenPaymentIds = new Set();
   for (const p of paymentsInput) {
     if (!isPlainObject(p)) fail('each payment must be an object');
     if (!isNonEmptyString(p.id)) fail('payment id is required and must be a non-empty string');
+    if (seenPaymentIds.has(p.id)) fail(`duplicate payment id: ${p.id}`);
+    seenPaymentIds.add(p.id);
     if (!isNonEmptyString(p.from_user_id) || !usersById.has(p.from_user_id)) {
       fail(`payment references unknown from_user_id: ${p.from_user_id}`);
     }
@@ -115,9 +118,12 @@ async function validateFixture(fixture) {
     }
   }
 
+  const seenRequestIds = new Set();
   for (const r of requestsInput) {
     if (!isPlainObject(r)) fail('each request must be an object');
     if (!isNonEmptyString(r.id)) fail('request id is required and must be a non-empty string');
+    if (seenRequestIds.has(r.id)) fail(`duplicate request id: ${r.id}`);
+    seenRequestIds.add(r.id);
     if (!isNonEmptyString(r.requester_id) || !usersById.has(r.requester_id)) {
       fail(`request references unknown requester_id: ${r.requester_id}`);
     }
@@ -138,10 +144,23 @@ async function validateFixture(fixture) {
   // Only now, after every synchronous check has passed, do the (async,
   // parallel) work of hashing seeded passwords. Nothing above this line
   // touches the live store, so a validation failure never gets here.
-  await Promise.all(pendingUsers.map(async (record) => {
-    record.passwordHash = await hashPassword(record.plainPassword);
-    delete record.plainPassword;
+  //
+  // Hashed once per *distinct* password value, not once per user: fixtures
+  // (including the specification's own example) typically seed the same
+  // password for every user, and scrypt is deliberately expensive, so
+  // hashing it 500 times over is 500x the cost for zero benefit. Hashing
+  // lazily at first login instead was rejected -- that would leave a
+  // just-seeded user's password in plaintext in memory until they log in,
+  // which is an observable violation of "no plaintext password storage"
+  // the moment anything reads state before then.
+  const hashByPassword = new Map();
+  await Promise.all([...new Set(pendingUsers.map((record) => record.plainPassword))].map(async (password) => {
+    hashByPassword.set(password, await hashPassword(password));
   }));
+  for (const record of pendingUsers) {
+    record.passwordHash = hashByPassword.get(record.plainPassword);
+    delete record.plainPassword;
+  }
 
   const now = new Date();
   let sequence = 0;
