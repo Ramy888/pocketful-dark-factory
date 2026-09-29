@@ -7,12 +7,16 @@ const { AppError } = require('./lib/errors');
 const { sendError, readJsonBody } = require('./lib/http');
 const { registerHealthRoutes } = require('./routes/health');
 const { registerTestResetRoutes } = require('./routes/testReset');
+const { registerAuthRoutes } = require('./routes/auth');
+const { registerMeRoutes } = require('./routes/me');
 const { Store } = require('./store');
 
 function buildRouter(store) {
   const router = createRouter();
   registerHealthRoutes(router);
   registerTestResetRoutes(router, store);
+  registerAuthRoutes(router, store);
+  registerMeRoutes(router, store);
   return router;
 }
 

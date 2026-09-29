@@ -17,6 +17,7 @@ function emptyState() {
     settlements: new Map(),
     operatorIds: new Set(),
     idempotency: new Map(),
+    tokensByValue: new Map(),
     idCounter: 0,
     sequenceCounter: 0,
   };
