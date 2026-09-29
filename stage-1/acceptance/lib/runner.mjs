@@ -139,10 +139,17 @@ class Ctx {
     }
 
     // spec 2 resource limits: per-request timeout 5 s, 10 s for POST /_test/reset.
+    //
+    // Unlike the other global invariants, this one inherits the check's severity. Whether
+    // the budget applies at all depends on whether the input is in scope, and an advisory
+    // check is precisely one whose input is a judgement call -- so a latency failure under
+    // an advisory check must not be able to veto. Every other invariant below is absolute:
+    // a 5xx, a malformed error envelope or a bad timestamp is wrong whatever was sent.
     const budget = res.path.startsWith('/_test/') ? 10000 : 5000;
     if (res.ms > budget) {
       once('slow ' + res.path, {
-        ref: 'R2.6', what: `${res.method} ${res.path} latency`, severity: 'blocking',
+        ref: 'R2.6', what: `${res.method} ${res.path} latency`,
+        severity: this.testCase.severity,
         expected: `a response within ${budget} ms`,
         actual: `${res.ms} ms`,
         res,
