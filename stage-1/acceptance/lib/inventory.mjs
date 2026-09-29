@@ -220,8 +220,9 @@ export const DECISIONS = [
   ['D15', 'On /settlements the operator check 403 runs immediately after authentication, before the idempotency key is examined.'],
   ['D20', '"Characters" means Unicode code points everywhere the specification counts them: the 200-character note, the 1..255 idempotency key, the 20-character handle truncation.'],
   ['D21', 'Handle derivation counts code points too: one underscore per non-[a-z0-9_] code point after lowercasing, then truncation to 20 code points.'],
-  ['D22', 'One precedence chain on every write path: parse 400, authenticate 401, authorise 403, key 400/422/200/409, body field validation 422, resource resolution 404, state and funds 409.'],
-  ['D23', 'The same chain applies per entry in /settlements: batch shape 422 first, then the first failing entry in input order, and within one entry self-transfer 422 ahead of unknown handle 404.'],
+  ['D22', 'One precedence chain on every write path: parse 400, authenticate 401, endpoint authorisation 403, key (400 missing / 422 length / 200 replay / 409 reuse), body field validation 422, resource resolution 404, resource-level authorisation 403, state 409, funds 409.'],
+  ['D23', 'The same chain applies per entry in /settlements: batch shape 422 first, then the first failing entry in input order, and within one entry self-transfer 422 ahead of unknown handle 404. The verifier dissents on the last clause; it is recorded in the decisions log and stays advisory.'],
+  ['D24', 'State 409 precedes funds 409: a terminal request whose payer is also short is request_not_pending, because a terminal status is dispositive without reference to any wallet.'],
 ];
 
 // References this suite deliberately does not check over HTTP, each with the reason.

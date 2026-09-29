@@ -10,8 +10,8 @@ no check is listed as a gap, and every gap must carry a reason.
 | references with at least one check | 149 |
 | references deliberately left to out-of-band verification | 22 |
 | references with no check and no stated reason | 0 |
-| coordinator interpretations checked (advisory only) | 16 of 16 |
-| checks | 201 (159 blocking, 42 advisory) |
+| coordinator interpretations checked (advisory only) | 17 of 17 |
+| checks | 202 (159 blocking, 43 advisory) |
 
 A **blocking** check fails the suite and rejects a handoff. An **advisory** check is one
 where the specification text does not settle the answer: it records what the service did
@@ -181,7 +181,7 @@ its reasoning in the source and prints it on failure.
 | R8.15 | The payer balance is not checked when a request is created. | 06: creating a request never touches a balance |
 | R8.16 | POST /requests/{id}/pay is the payer only; the body carries visibility only, optional, default public; a replay must send the identical body, so {} and {"visibility":"public"} are different. | 05: {} and {"visibility":"public"} are different bodies on the pay path<br>06: the payer chooses the visibility of the payment that settles a request |
 | R8.17 | Pay returns 201 with the created payment exactly as POST /payments returns one, request_id set to this request; the request becomes paid and carries the new payment_id. | 06: paying a request returns a payment and marks the request paid |
-| R8.18 | Pay errors: not pending 409 request_not_pending; balance below amount 409 insufficient_funds; caller not the payer 403 forbidden; unknown request 404 not_found. | 06: a short payer gets 409 insufficient_funds and the request stays payable<br>06: only the payer may pay; others get 403 and unknown ids get 404<br>11: a request not pending beats a balance the payer does not have *(advisory)*<br>11: an unknown request id beats a missing idempotency key *(advisory)* |
+| R8.18 | Pay errors: not pending 409 request_not_pending; balance below amount 409 insufficient_funds; caller not the payer 403 forbidden; unknown request 404 not_found. | 06: a short payer gets 409 insufficient_funds and the request stays payable<br>06: only the payer may pay; others get 403 and unknown ids get 404<br>11: a terminal status beats a balance the payer does not have *(advisory)*<br>11: an unknown request id beats a missing idempotency key *(advisory)* |
 | R8.19 | Replaying a successful pay returns 200 with the original payment body even though the request is already paid, moves no money, and must not return 409 request_not_pending. | 05: an already claimed key resolves before the current-resource check |
 | R8.20 | POST /requests/{id}/decline is the payer only, takes no idempotency key, returns 200 declined; declining twice is 200; a paid or cancelled request is 409 request_not_pending; not the payer is 403. | 06: decline is the payer only, is idempotent by itself, and moves no money<br>06: a paid request can no longer be declined or cancelled |
 | R8.21 | POST /requests/{id}/cancel is the requester only, takes no idempotency key, returns 200 cancelled; cancelling twice is 200; a paid or declined request is 409 request_not_pending; not the requester is 403. | 06: cancel is the requester only, is idempotent by itself, and moves no money<br>06: a paid request can no longer be declined or cancelled |
@@ -282,8 +282,9 @@ specification differently is reported but not rejected.
 | D15 | On /settlements the operator check 403 runs immediately after authentication, before the idempotency key is examined. | 09: a non-operator is refused before the idempotency key is examined |
 | D20 | "Characters" means Unicode code points everywhere the specification counts them: the 200-character note, the 1..255 idempotency key, the 20-character handle truncation. | 04: the note boundary is counted in code points, not UTF-16 units<br>05: a key of 256 characters is 422 validation_failed |
 | D21 | Handle derivation counts code points too: one underscore per non-[a-z0-9_] code point after lowercasing, then truncation to 20 code points. | 03: derivation replaces one underscore per code point, not per UTF-16 unit<br>03: derivation lowercases before replacing, even when lowercasing expands |
-| D22 | One precedence chain on every write path: parse 400, authenticate 401, authorise 403, key 400/422/200/409, body field validation 422, resource resolution 404, state and funds 409. | 11: body field validation beats resource resolution<br>11: a duplicate participant beats an unknown participant |
-| D23 | The same chain applies per entry in /settlements: batch shape 422 first, then the first failing entry in input order, and within one entry self-transfer 422 ahead of unknown handle 404. | 09: within one entry, a self transfer is reported ahead of the unknown handle |
+| D22 | One precedence chain on every write path: parse 400, authenticate 401, endpoint authorisation 403, key (400 missing / 422 length / 200 replay / 409 reuse), body field validation 422, resource resolution 404, resource-level authorisation 403, state 409, funds 409. | 11: body field validation beats resource resolution<br>11: a duplicate participant beats an unknown participant<br>11: body field validation beats resource resolution on the pay path too |
+| D23 | The same chain applies per entry in /settlements: batch shape 422 first, then the first failing entry in input order, and within one entry self-transfer 422 ahead of unknown handle 404. The verifier dissents on the last clause; it is recorded in the decisions log and stays advisory. | 09: within one entry, a self transfer is reported ahead of the unknown handle |
+| D24 | State 409 precedes funds 409: a terminal request whose payer is also short is request_not_pending, because a terminal status is dispositive without reference to any wallet. | 11: a terminal status beats a balance the payer does not have |
 
 ## Deliberately not covered by this suite
 
