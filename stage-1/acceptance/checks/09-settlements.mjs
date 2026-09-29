@@ -220,6 +220,26 @@ suite('09 settlements', () => {
     }
   });
 
+  test('within one entry, a self transfer is reported ahead of the unknown handle', ['D23'], async (t) => {
+    const c = await loginAll(t);
+    // from_handle and to_handle are the same string, and that string is not a handle.
+    // The entry is both a self transfer and an unknown-handle reference.
+    for (const handle of ['ghost', 'nobody', 'not_a_user']) {
+      const res = await settle(t, c, 'op', [T(handle, handle, 1)]);
+      t.err(res, 422, 'self_payment', {
+        ref: 'D23', what: `a transfer from ${handle} to ${handle}, where ${handle} does not exist`,
+      });
+    }
+  }, {
+    severity: 'advisory',
+    why: 'Decision D23 orders self-transfer, a property of the entry itself, ahead of the handle '
+       + 'lookup. spec 11 states both mappings in one sentence and orders only entries against '
+       + 'each other, not the checks within an entry. 404 not_found is at least as defensible '
+       + 'here: nothing can be transferred out of a wallet that does not exist, and unlike '
+       + 'spec 8 self_payment, there is no caller handle involved that is known to exist. This '
+       + 'is the only case where the two readings differ, and no money moves either way.',
+  });
+
   test('entry errors take precedence in input order, ahead of insufficient funds', ['R11.8'], async (t) => {
     const c = await loginAll(t);
     // ada holds 10000; a transfer of 20000 out of ada is collectively unaffordable.

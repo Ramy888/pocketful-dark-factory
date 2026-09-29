@@ -276,9 +276,28 @@ suite('04 payments', () => {
     t.eq(res.json.note, note, { ref: 'R8.11', what: 'the astral note round trip', res });
   }, {
     severity: 'advisory',
-    why: 'spec 8 says "longer than 200 characters" without defining character. Code points is the '
-       + 'natural reading; an implementation counting UTF-16 code units rejects this at 422 without '
-       + 'contradicting the text. The ASCII 200/201 boundary is the blocking check.',
+    why: 'spec 8 says "longer than 200 characters" without defining character. Decision D20 reads it '
+       + 'as code points, which makes 200 astral emoji a valid note; an implementation counting '
+       + 'UTF-16 code units rejects this at 422 without contradicting the text. The ASCII 200/201 '
+       + 'boundary is the blocking check.',
+  });
+
+  test('the note boundary is counted in code points, not UTF-16 units', ['D20'], async (t) => {
+    await reset(t, 'eur');
+    const ada = await login(t, 'ada@example.com');
+    if (!ada) return;
+    // 100 astral code points (200 UTF-16 units) plus 100 ASCII: 200 code points exactly.
+    const atBoundary = '\u{1F600}'.repeat(100) + 'x'.repeat(100);
+    const ok = await pay(t, ada.token, { to_handle: 'bob', amount: 1, note: atBoundary });
+    if (t.status(ok, 201, { ref: 'D20', what: 'a note of exactly 200 code points, 300 UTF-16 units' })) {
+      t.eq(ok.json.note, atBoundary, { ref: 'R8.11', what: 'the mixed-width note round trip', res: ok });
+    }
+    const over = await pay(t, ada.token, { to_handle: 'bob', amount: 1, note: atBoundary + '\u{1F600}' });
+    t.err(over, 422, 'validation_failed', { ref: 'D20', what: 'a note of 201 code points' });
+  }, {
+    severity: 'advisory',
+    why: 'Decision D20. The specification counts "characters" without defining the unit, so a '
+       + 'UTF-16 implementation refusing this note is not contradicting the text.',
   });
 
   test('visibility must be public or private', ['R8.8'], async (t) => {

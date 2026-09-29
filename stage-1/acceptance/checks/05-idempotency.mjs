@@ -126,7 +126,11 @@ suite('05 idempotency', () => {
     }
   });
 
-  test('a key of 256 characters is 422 validation_failed', ['R5.13'], async (t) => {
+  // The unit in which an Idempotency-Key is counted is not observable over HTTP. A header
+  // value carries octets, and a character outside ASCII cannot be sent raw at all, so for
+  // every key a client can actually transmit, code points, UTF-16 units and bytes coincide.
+  // The boundary checks below are therefore the whole of the testable rule.
+  test('a key of 256 characters is 422 validation_failed', ['R5.13', 'D20'], async (t) => {
     const c = await loginAll(t);
     for (const p of PATHS) {
       const s = await p.prepare(t, c);

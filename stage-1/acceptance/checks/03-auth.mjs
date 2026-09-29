@@ -76,10 +76,42 @@ suite('03 authentication and handles', () => {
     });
   }, {
     severity: 'advisory',
-    why: 'spec 4 orders the derivation lowercase-then-replace, which gives _ber, but it does not '
-       + 'state whether "character" means a code point or a UTF-16 code unit, and Unicode '
-       + 'lowercasing of some characters is expanding. A handle matching ^[a-z0-9_]{1,20}$ is the '
-       + 'blocking part and is checked above.',
+    why: 'spec 4 orders the derivation lowercase-then-replace, which gives _ber. Decision D21 fixes '
+       + 'the unit as the code point. A handle matching ^[a-z0-9_]{1,20}$ is the blocking part and '
+       + 'is checked above.',
+  });
+
+  test('derivation replaces one underscore per code point, not per UTF-16 unit', ['D21'], async (t) => {
+    await reset(t, 'minimal');
+    // An astral emoji is one code point and two UTF-16 units.
+    const res = await signup(t, '\u{1F600}a@example.com', 'Emoji');
+    if (!t.status(res, 201, { ref: 'D21', what: 'signup with an astral character in the local part' })) return;
+    const m = await me(t, res.json.token);
+    t.eq(m.json && m.json.handle, '_a', {
+      ref: 'D21', what: 'handle derived from an emoji plus "a" (one underscore, not two)', res: m,
+    });
+  }, {
+    severity: 'advisory',
+    why: 'Decision D21. spec 4 does not define the unit, so one underscore per UTF-16 unit ("__a") '
+       + 'is also a reading of the text.',
+  });
+
+  test('derivation lowercases before replacing, even when lowercasing expands', ['D21', 'R4.6'], async (t) => {
+    await reset(t, 'minimal');
+    // U+0130 lowercases to two code points, "i" followed by a combining dot above.
+    // spec 4 orders lowercase first, so the "i" survives and only the combining mark
+    // becomes an underscore. Replacing before lowercasing would give "_" instead.
+    const res = await signup(t, '\u0130@example.com', 'Dotted');
+    if (!t.status(res, 201, { ref: 'D21', what: 'signup with U+0130 as the whole local part' })) return;
+    const m = await me(t, res.json.token);
+    t.eq(m.json && m.json.handle, 'i_', {
+      ref: 'D21', what: 'handle derived from U+0130 (lowercase to i + U+0307, then replace)', res: m,
+    });
+  }, {
+    severity: 'advisory',
+    why: 'spec 4 states the order lowercase-then-replace, so this case is settled by the text more '
+       + 'than by decision D21. It is advisory only because Unicode case mapping is locale and '
+       + 'library dependent, and the specification names no case-mapping standard.',
   });
 
   test('a duplicate email is 409 email_taken', ['R6.3'], async (t) => {

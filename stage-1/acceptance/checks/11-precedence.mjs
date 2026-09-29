@@ -105,35 +105,44 @@ suite('11 error precedence', () => {
        + 'is the same shape of decision.',
   });
 
-  test('an invalid amount beats an unknown recipient', ['R5.10'], async (t) => {
+  test('body field validation beats resource resolution', ['D22'], async (t) => {
     const c = await loginAll(t);
-    for (const body of [
-      { to_handle: 'nobody', amount: 0 },
-      { to_handle: 'nobody', amount: -1 },
-      { to_handle: 'nobody', amount: 1000000001 },
-    ]) {
-      const res = await api(t, { method: 'POST', path: '/payments', token: c.tokens.ada, idemKey: key('pr'), body });
-      t.oneOfErr(res, [[422, 'validation_failed'], [404, 'not_found']], {
-        ref: 'R5.10', what: `amount ${body.amount} with an unknown to_handle`,
+    const cases = [
+      ['an amount of 0 with an unknown to_handle', '/payments', 'ada', { to_handle: 'nobody', amount: 0 }],
+      ['a negative amount with an unknown to_handle', '/payments', 'ada', { to_handle: 'nobody', amount: -1 }],
+      ['an over-maximum amount with an unknown to_handle', '/payments', 'ada', { to_handle: 'nobody', amount: 1000000001 }],
+      ['a 201-character note with an unknown to_handle', '/payments', 'ada', { to_handle: 'nobody', amount: 10, note: 'x'.repeat(201) }],
+      ['an invalid visibility with an unknown to_handle', '/payments', 'ada', { to_handle: 'nobody', amount: 10, visibility: 'loud' }],
+      ['an amount of 0 with an unknown payer_handle', '/requests', 'ada', { payer_handle: 'nobody', amount: 0 }],
+      ['a 201-character note with an unknown payer_handle', '/requests', 'ada', { payer_handle: 'nobody', amount: 10, note: 'x'.repeat(201) }],
+      ['an amount of 0 with an unknown participant', '/splits', 'ada', { amount: 0, participant_handles: ['ada', 'nobody'] }],
+    ];
+    for (const [label, path, who, body] of cases) {
+      const res = await api(t, { method: 'POST', path, token: c.tokens[who], idemKey: key('pr'), body });
+      t.err(res, 422, 'validation_failed', { ref: 'D22', what: label });
+    }
+  }, {
+    severity: 'advisory',
+    why: 'Decision D22 fixes one chain: body field validation 422 before resource resolution 404. '
+       + 'The specification orders neither, and the row order of its own error tables is not '
+       + 'evidence either way -- the payments table lists 409 insufficient_funds first, which no '
+       + 'reading treats as the highest precedence. 404 not_found is an equally documented answer '
+       + 'to each of these requests.',
+  });
+
+  test('a duplicate participant beats an unknown participant', ['D22'], async (t) => {
+    const c = await loginAll(t);
+    for (const handles of [['ghost', 'ghost'], ['ada', 'ghost', 'ghost'], ['ghost', 'ghost', 'ada']]) {
+      const res = await api(t, { method: 'POST', path: '/splits', token: c.tokens.ada, idemKey: key('pr'), body: { amount: 10, participant_handles: handles } });
+      t.err(res, 422, 'validation_failed', {
+        ref: 'D22', what: `participant_handles ${JSON.stringify(handles)}: a duplicate that is also unknown`,
       });
     }
   }, {
     severity: 'advisory',
-    why: 'spec 5 says endpoint-specific field rules take precedence, which points at 422 for the '
-       + 'amount; spec 8 maps the unknown handle to 404. Both are documented answers for this '
-       + 'request and the specification does not order them.',
-  });
-
-  test('an over-long note beats an unknown recipient', ['R8.7'], async (t) => {
-    const c = await loginAll(t);
-    const res = await api(t, { method: 'POST', path: '/payments', token: c.tokens.ada, idemKey: key('pr'), body: { to_handle: 'nobody', amount: 10, note: 'x'.repeat(201) } });
-    t.oneOfErr(res, [[422, 'validation_failed'], [404, 'not_found']], {
-      ref: 'R8.7', what: 'a 201-character note with an unknown to_handle',
-    });
-  }, {
-    severity: 'advisory',
-    why: 'As above: a field rule and a resource lookup both apply and the specification orders '
-       + 'neither.',
+    why: 'Decision D22 treats an array-internal check as field validation, so the duplicate is '
+       + 'reported before the handles are looked up. 404 not_found is equally available: the '
+       + 'handles genuinely do not exist.',
   });
 
   test('an invalid visibility beats a balance the caller does not have', ['R8.8'], async (t) => {
@@ -186,8 +195,9 @@ suite('11 error precedence', () => {
   }, {
     severity: 'advisory',
     why: 'spec 8 lists request_not_pending and insufficient_funds in one table with no stated '
-       + 'order. Reporting the lifecycle state first is the reading that matches spec 4, which '
-       + 'makes the terminal state final.',
+       + 'order, and decision D22 puts both in its last step without separating them. Reporting '
+       + 'the lifecycle state first is the reading that matches spec 4, which makes the terminal '
+       + 'state final.',
   });
 
   test('an unknown request id beats a missing idempotency key', ['R8.18'], async (t) => {

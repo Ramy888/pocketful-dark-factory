@@ -10,8 +10,8 @@ no check is listed as a gap, and every gap must carry a reason.
 | references with at least one check | 149 |
 | references deliberately left to out-of-band verification | 22 |
 | references with no check and no stated reason | 0 |
-| coordinator interpretations checked (advisory only) | 12 of 12 |
-| checks | 197 (159 blocking, 38 advisory) |
+| coordinator interpretations checked (advisory only) | 16 of 16 |
+| checks | 201 (159 blocking, 42 advisory) |
 
 A **blocking** check fails the suite and rejects a handoff. An **advisory** check is one
 where the specification text does not settle the answer: it records what the service did
@@ -85,7 +85,7 @@ its reasoning in the source and prints it on failure.
 | R4.3 | Every user has a handle: unique across the service, matching ^[a-z0-9_]{1,20}$, never changing once set. | 04: a handle differing only in case does not resolve<br>04: a syntactically impossible handle is rejected, never resolved *(advisory)* |
 | R4.4 | Users identify recipients by handle; directory and user-search endpoints are out of scope. | **not checked over HTTP** — A statement of scope: there is no directory endpoint to test. Recipient identification by handle is covered throughout. |
 | R4.5 | Seeded users take their handle from the fixture. | 02: seeded balances are used as given and never re-derived from seeded payments |
-| R4.6 | A signed-up user has a handle derived from the email: local part, lowercased, every character outside [a-z0-9_] replaced with _, truncated to 20 characters. | 03: the handle is derived from the email exactly as spec 4 states<br>03: a non-ASCII local part is lowercased then replaced character by character *(advisory)* |
+| R4.6 | A signed-up user has a handle derived from the email: local part, lowercased, every character outside [a-z0-9_] replaced with _, truncated to 20 characters. | 03: the handle is derived from the email exactly as spec 4 states<br>03: a non-ASCII local part is lowercased then replaced character by character *(advisory)*<br>03: derivation lowercases before replacing, even when lowercasing expands *(advisory)* |
 | R4.7 | If the derived handle is already taken the signup fails. | **not checked over HTTP** — Restated with its error code as R6.7, which is checked. |
 | R4.8 | New users start with a balance of 0 and can receive money and be asked for money immediately. | 03: signup returns 201 with a working token and a zero balance<br>03: a new account can receive money and be asked for money immediately |
 | R4.9 | A payment moves money from one wallet to another immediately and atomically, sent directly or created by paying a request. | 04: a payment returns the documented object and moves money |
@@ -117,7 +117,7 @@ its reasoning in the source and prints it on failure.
 | R5.7 | 409 idempotency_key_reuse: a key already used by this caller with a different request body. | 05: the same key with a different body is 409 idempotency_key_reuse |
 | R5.8 | 422 validation_failed: a required field or query parameter is missing, or a stated rule is violated with no more specific code. | 02: a fixture missing users is 422 validation_failed<br>02: a structurally inconsistent fixture is rejected without changing state *(advisory)*<br>03: signup and login reject missing fields with 422 and wrong types with 400<br>04: to_handle of the wrong JSON type is 400, and absent is 422 |
 | R5.9 | A field of the correct JSON type with an invalid format or out-of-range value gives 422 validation_failed unless the endpoint specifies otherwise. | 04: an amount that is not an integral number is 422 |
-| R5.10 | Endpoint field rules take precedence: an invalid amount (including strings and booleans), a non-string note (including null) and any visibility other than public or private are 422; omission alone selects the optional-field default. | 04: a note of the wrong JSON type, including null, is 422<br>11: an invalid amount beats an unknown recipient *(advisory)* |
+| R5.10 | Endpoint field rules take precedence: an invalid amount (including strings and booleans), a non-string note (including null) and any visibility other than public or private are 422; omission alone selects the optional-field default. | 04: a note of the wrong JSON type, including null, is 422 |
 | R5.11 | An integer-valued query parameter is plain decimal digits: 1e9, 4.0 and +4 are 422 whatever their numeric value. | 06: limit, offset and has_more behave as specified |
 | R5.12 | 400 malformed_request is reserved for a body that does not parse or a field of the wrong type. | 11: a body of the wrong JSON type beats every later check |
 | R5.13 | Idempotency-Key is 1 to 255 characters, otherwise 422 validation_failed. | 05: a key of 1 and of 255 characters is accepted<br>05: a key of 256 characters is 422 validation_failed<br>11: an over-long idempotency key beats endpoint field validation *(advisory)* |
@@ -170,7 +170,7 @@ its reasoning in the source and prints it on failure.
 | R8.4 | A caller balance below amount is 409 insufficient_funds. | 04: a balance below amount is 409 insufficient_funds and moves nothing<br>04: a payment may spend the whole balance but not one unit more<br>11: an unresolvable recipient beats a balance the caller does not have |
 | R8.5 | An amount below 1, above 1000000000, or not an integer is 422 validation_failed. | 04: an amount that is not an integral number is 422 |
 | R8.6 | to_handle equal to the caller own handle is 422 self_payment. | 04: paying your own handle is 422 self_payment<br>04: self_payment is decided before the balance is consulted *(advisory)*<br>11: a self payment beats a balance the caller does not have *(advisory)* |
-| R8.7 | A note longer than 200 characters is 422 validation_failed. | 04: a note longer than 200 characters is 422 and 200 is accepted<br>04: a 200-code-point note of astral characters is accepted *(advisory)*<br>11: an over-long note beats an unknown recipient *(advisory)* |
+| R8.7 | A note longer than 200 characters is 422 validation_failed. | 04: a note longer than 200 characters is 422 and 200 is accepted<br>04: a 200-code-point note of astral characters is accepted *(advisory)* |
 | R8.8 | A visibility other than public or private is 422 validation_failed. | 04: visibility must be public or private<br>06: an invalid visibility on the pay path is 422<br>11: an invalid visibility beats a balance the caller does not have *(advisory)* |
 | R8.9 | No user with that handle is 404 not_found. | 04: an unknown handle is 404, ahead of any balance question<br>04: a syntactically impossible handle is rejected, never resolved *(advisory)*<br>11: an unresolvable recipient beats a balance the caller does not have |
 | R8.10 | The debit and the credit are one atomic step; a payment is never visible in one wallet and not the other, and a failed payment leaves no trace in either. | 04: a balance below amount is 409 insufficient_funds and moves nothing<br>12: reads stay coherent while writes are in flight |
@@ -280,6 +280,10 @@ specification differently is reported but not rejected.
 | D13 | For /requests/{id}/*, a known request with the wrong caller is 403 forbidden, not 404. | 11: the wrong caller on a settled request is 403, not the state error |
 | D14 | Idempotent write path order: parse body 400, authenticate 401, key present 400, key length 422, key resolution 200/409, then endpoint field validation. | 11: an unparseable body beats a missing idempotency key<br>11: a missing idempotency key beats endpoint field validation<br>11: an over-long idempotency key beats endpoint field validation |
 | D15 | On /settlements the operator check 403 runs immediately after authentication, before the idempotency key is examined. | 09: a non-operator is refused before the idempotency key is examined |
+| D20 | "Characters" means Unicode code points everywhere the specification counts them: the 200-character note, the 1..255 idempotency key, the 20-character handle truncation. | 04: the note boundary is counted in code points, not UTF-16 units<br>05: a key of 256 characters is 422 validation_failed |
+| D21 | Handle derivation counts code points too: one underscore per non-[a-z0-9_] code point after lowercasing, then truncation to 20 code points. | 03: derivation replaces one underscore per code point, not per UTF-16 unit<br>03: derivation lowercases before replacing, even when lowercasing expands |
+| D22 | One precedence chain on every write path: parse 400, authenticate 401, authorise 403, key 400/422/200/409, body field validation 422, resource resolution 404, state and funds 409. | 11: body field validation beats resource resolution<br>11: a duplicate participant beats an unknown participant |
+| D23 | The same chain applies per entry in /settlements: batch shape 422 first, then the first failing entry in input order, and within one entry self-transfer 422 ahead of unknown handle 404. | 09: within one entry, a self transfer is reported ahead of the unknown handle |
 
 ## Deliberately not covered by this suite
 
