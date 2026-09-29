@@ -177,27 +177,60 @@ suite('11 error precedence', () => {
   }, {
     severity: 'advisory',
     why: 'Both 403 forbidden and 409 request_not_pending are documented for this call, and spec 5 '
-       + 'also permits 404 for a resource not visible to the caller. Decision D13 puts the '
-       + 'permission check first.',
+       + 'also permits 404 for a resource not visible to the caller. Decision D13, and D22 step 7, '
+       + 'put resource-level authorisation after resource resolution and before the state check.',
   });
 
-  test('a request not pending beats a balance the payer does not have', ['R8.18'], async (t) => {
+  test('a terminal status beats a balance the payer does not have', ['D24', 'R8.18'], async (t) => {
     const c = await loginAll(t);
-    const rq = await api(t, { method: 'POST', path: '/requests', token: c.tokens.ada, idemKey: key('pr'), body: { payer_handle: 'dee', amount: 5000 } });
-    if (!t.status(rq, 201, { ref: 'R8.12', what: 'a request dee cannot afford' })) return;
-    const id = rq.json.request_id;
-    const declined = await api(t, { method: 'POST', path: `/requests/${id}/decline`, token: c.tokens.dee, body: {} });
-    if (!t.status(declined, 200, { ref: 'R8.20', what: 'dee declining it' })) return;
-    const res = await api(t, { method: 'POST', path: `/requests/${id}/pay`, token: c.tokens.dee, idemKey: key('pr'), body: {} });
-    t.err(res, 409, 'request_not_pending', {
-      ref: 'R8.18', what: 'paying a declined request that the payer could not afford either',
+    // dee holds 100, so 5000 is unaffordable in every one of these cases. Each request
+    // is driven into a different terminal status, then paid.
+    const terminal = [
+      ['declined', 'R8.20', async (id) => api(t, { method: 'POST', path: `/requests/${id}/decline`, token: c.tokens.dee, body: {} })],
+      ['cancelled', 'R8.21', async (id) => api(t, { method: 'POST', path: `/requests/${id}/cancel`, token: c.tokens.ada, body: {} })],
+    ];
+    for (const [status, transitionRef, transition] of terminal) {
+      const rq = await api(t, { method: 'POST', path: '/requests', token: c.tokens.ada, idemKey: key('pr'), body: { payer_handle: 'dee', amount: 5000 } });
+      if (!t.status(rq, 201, { ref: 'R8.12', what: `a request dee cannot afford, to be ${status}` })) continue;
+      const id = rq.json.request_id;
+      const moved = await transition(id);
+      if (!t.status(moved, 200, { ref: transitionRef, what: `driving it to ${status}` })) continue;
+      const res = await api(t, { method: 'POST', path: `/requests/${id}/pay`, token: c.tokens.dee, idemKey: key('pr'), body: {} });
+      t.err(res, 409, 'request_not_pending', {
+        ref: 'D24', what: `paying a ${status} request that the payer could not afford either`,
+      });
+    }
+    // And the paid case: a request already paid, retried by a payer now too short.
+    const rq = await api(t, { method: 'POST', path: '/requests', token: c.tokens.ada, idemKey: key('pr'), body: { payer_handle: 'dee', amount: 100 } });
+    if (!t.status(rq, 201, { ref: 'R8.12', what: 'a request dee can just afford' })) return;
+    const first = await api(t, { method: 'POST', path: `/requests/${rq.json.request_id}/pay`, token: c.tokens.dee, idemKey: key('pr'), body: {} });
+    if (!t.status(first, 201, { ref: 'R8.17', what: 'dee paying it, emptying the wallet' })) return;
+    const again = await api(t, { method: 'POST', path: `/requests/${rq.json.request_id}/pay`, token: c.tokens.dee, idemKey: key('pr'), body: {} });
+    t.err(again, 409, 'request_not_pending', {
+      ref: 'D24', what: 'paying an already paid request under a fresh key, with the wallet now empty',
     });
   }, {
     severity: 'advisory',
-    why: 'spec 8 lists request_not_pending and insufficient_funds in one table with no stated '
-       + 'order, and decision D22 puts both in its last step without separating them. Reporting '
-       + 'the lifecycle state first is the reading that matches spec 4, which makes the terminal '
-       + 'state final.',
+    why: 'Decision D24. spec 8 lists request_not_pending and insufficient_funds in one table with '
+       + 'no stated order. Reporting the status first is the reading that matches spec 4, which '
+       + 'makes a terminal status final, and spec 1.9, which is a status rule rather than a funds '
+       + 'rule; but the text does not settle it.',
+  });
+
+  test('body field validation beats resource resolution on the pay path too', ['D22'], async (t) => {
+    const c = await loginAll(t);
+    // An invalid visibility in the body and a request id that does not exist.
+    const res = await api(t, {
+      method: 'POST', path: '/requests/rq_no_such_thing/pay', token: c.tokens.bob,
+      idemKey: key('pr'), body: { visibility: 'loud' },
+    });
+    t.err(res, 422, 'validation_failed', {
+      ref: 'D22', what: 'an invalid visibility against an unknown request id',
+    });
+  }, {
+    severity: 'advisory',
+    why: 'Decision D22 places body field validation ahead of resource resolution. 404 not_found is '
+       + 'an equally documented answer, since the request genuinely does not exist.',
   });
 
   test('an unknown request id beats a missing idempotency key', ['R8.18'], async (t) => {
