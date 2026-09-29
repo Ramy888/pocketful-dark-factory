@@ -272,6 +272,76 @@ suite('02 reset and fixture', () => {
     t.err(res, 422, 'validation_failed', {
       ref: 'R5.8', what: 'POST /_test/reset with no users field',
     });
+  }, {
+    severity: 'advisory',
+    why: 'This check was blocking and should not have been. spec 4 shows users in the fixture '
+       + 'format but never marks any fixture field required, and spec 5 maps only a missing '
+       + '*required* field to 422. Treating an absent users as an empty list is an equally '
+       + 'available reading, and it is the one that keeps users consistent with payments and '
+       + 'requests. Reclassified by the verifier after it emerged that the blocking form of this '
+       + 'check, not the specification, is what drove the implementation to require the field.',
+  });
+
+  // The specification bounds a reset at 10 s (spec 2 and spec 10) and places no bound on
+  // how many users a fixture may seed, so per-user work at reset time has to stay cheap.
+  // 500 is used rather than a tighter number because it is the smallest size at which the
+  // budget was exceeded on every repeat during verification; at 300 the result straddles
+  // the limit and a blocking check there would be flaky.
+  const BUDGET_USERS = 500;
+
+  test('reset stays inside the 10 second test-control budget', ['R10.9', 'R2.6'], async (t) => {
+    const users = [];
+    for (let i = 0; i < BUDGET_USERS; i++) {
+      users.push({
+        id: `u_${i}`, email: `u${i}@example.com`, password: 'correct horse',
+        display_name: `User ${i}`, handle: `u${i}`, balance: 100,
+      });
+    }
+    const res = await resetWith(t, { currency: 'EUR', minor_units: 2, users, payments: [], requests: [] }, null);
+    t.status(res, 204, { ref: 'R3.3', what: `POST /_test/reset with ${BUDGET_USERS} seeded users` });
+    t.ok(res.ms <= 10000, {
+      ref: 'R10.9', what: `POST /_test/reset duration with ${BUDGET_USERS} seeded users`, res,
+      expected: 'at most 10000 ms',
+      actual: `${res.ms} ms`,
+    });
+  }, { slow: true });
+
+  test('a fixture with two seeded payments sharing an id is not silently collapsed', ['R4.18'], async (t) => {
+    await reset(t, 'eur');
+    const dup = {
+      currency: 'EUR', minor_units: 2,
+      users: [
+        { id: 'u_a', email: 'a@example.com', password: PW, display_name: 'A', handle: 'a', balance: 50 },
+        { id: 'u_b', email: 'b@example.com', password: PW, display_name: 'B', handle: 'b', balance: 50 },
+      ],
+      payments: [
+        { id: 'p_same', from_user_id: 'u_a', to_user_id: 'u_b', amount: 1, note: 'first', visibility: 'public' },
+        { id: 'p_same', from_user_id: 'u_b', to_user_id: 'u_a', amount: 2, note: 'second', visibility: 'public' },
+      ],
+      requests: [],
+    };
+    const res = await resetWith(t, dup, null);
+    if (res.status === 422) {
+      t.err(res, 422, 'validation_failed', { ref: 'R4.18', what: 'a fixture with a duplicate payment id' });
+      return;
+    }
+    // If the service accepts it, both seeded payments must still exist and be readable.
+    t.status(res, 204, { ref: 'R4.18', what: 'a fixture with a duplicate payment id' });
+    const a = await login(t, 'a@example.com');
+    if (!a) return;
+    const feed = await api(t, { path: '/activity', token: a.token, query: { limit: 200 } });
+    if (!t.status(feed, 200, { ref: 'R8.35', what: 'GET /activity' })) return;
+    t.eq((feed.json.payments || []).length, 2, {
+      ref: 'R4.18', what: 'both seeded payments after a fixture reused one id', res: feed,
+      expected: '2 payments, or a 422 refusing the fixture outright',
+      actual: `${(feed.json.payments || []).length} payments: ${JSON.stringify(feed.json.payments)}`,
+    });
+  }, {
+    severity: 'advisory',
+    why: 'The specification never states that seeded payment ids must be unique, and spec 4 '
+       + 'promises consistent fixtures, so a service may reasonably trust the input. What this '
+       + 'check rules out is the third outcome: accepting the fixture and silently keeping only '
+       + 'one of the two payments. Either answer, 422 or both payments present, passes.',
   });
 
   test('a fixture field of the wrong JSON type is 400 malformed_request', ['R5.2'], async (t) => {

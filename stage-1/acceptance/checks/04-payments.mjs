@@ -1,7 +1,7 @@
 // Specification 8 (POST /payments) and the atomicity clauses of specifications 1 and 8.
 
 import { suite, test, seededTotal } from '../lib/runner.mjs';
-import { api, reset, login, loginAll, me, balance, sumBalances, pay, activity, key, PAYMENT_FIELDS } from '../lib/helpers.mjs';
+import { api, reset, resetWith, login, loginAll, me, balance, sumBalances, pay, activity, key, PW, PAYMENT_FIELDS } from '../lib/helpers.mjs';
 
 suite('04 payments', () => {
   test('a payment returns the documented object and moves money', ['R1.1', 'R8.2', 'R8.3', 'R4.9'], async (t) => {
@@ -314,6 +314,61 @@ suite('04 payments', () => {
         rawBody: `{"to_handle":"bob","amount":1,"visibility":${literal}}`,
       });
       t.err(res, 422, 'validation_failed', { ref: 'R8.8', what: `POST /payments with visibility ${literal}` });
+    }
+  });
+
+  test('a created payment never reuses a seeded id', ['R3.4e', 'R8.3'], async (t) => {
+    // The specification's own fixture example seeds "id": "p_1" and "id": "rq_1", which is
+    // exactly the shape a counter-based generator produces. Two resources sharing an id
+    // makes a replay unable to name what it replayed.
+    const fx = {
+      currency: 'EUR', minor_units: 2,
+      users: [
+        { id: 'u_ada', email: 'ada@example.com', password: PW, display_name: 'Ada', handle: 'ada', balance: 10000 },
+        { id: 'u_bob', email: 'bob@example.com', password: PW, display_name: 'Bob', handle: 'bob', balance: 2500 },
+      ],
+      payments: [
+        { id: 'p_1', from_user_id: 'u_ada', to_user_id: 'u_bob', amount: 500, note: 'seeded', visibility: 'public' },
+        { id: 'p_2', from_user_id: 'u_ada', to_user_id: 'u_bob', amount: 501, note: 'seeded', visibility: 'public' },
+      ],
+      requests: [
+        { id: 'rq_1', requester_id: 'u_bob', payer_id: 'u_ada', amount: 1200, note: 'seeded', status: 'pending' },
+      ],
+    };
+    await resetWith(t, fx, 204);
+    const ada = await login(t, 'ada@example.com');
+    if (!ada) return;
+
+    const seededPaymentIds = new Set(fx.payments.map((p) => p.id));
+    const seededRequestIds = new Set(fx.requests.map((r) => r.id));
+    for (let i = 0; i < 4; i++) {
+      const p = await pay(t, ada.token, { to_handle: 'bob', amount: 1, note: `created ${i}` });
+      if (!t.status(p, 201, { ref: 'R8.3', what: `POST /payments number ${i + 1}` })) return;
+      t.ok(!seededPaymentIds.has(p.json.payment_id), {
+        ref: 'R3.4e', what: `the id of created payment ${i + 1}`, res: p,
+        expected: `an id distinct from the seeded ids ${[...seededPaymentIds].join(', ')}`,
+        actual: JSON.stringify(p.json.payment_id),
+      });
+      const r = await api(t, { method: 'POST', path: '/requests', token: ada.token, idemKey: key('idu'), body: { payer_handle: 'bob', amount: 1 } });
+      if (!t.status(r, 201, { ref: 'R8.13', what: `POST /requests number ${i + 1}` })) return;
+      t.ok(!seededRequestIds.has(r.json.request_id), {
+        ref: 'R3.4e', what: `the id of created request ${i + 1}`, res: r,
+        expected: `an id distinct from the seeded ids ${[...seededRequestIds].join(', ')}`,
+        actual: JSON.stringify(r.json.request_id),
+      });
+    }
+
+    // And the feed must show every payment separately: 2 seeded plus 4 created.
+    const feed = await activity(t, ada.token, { limit: 200 });
+    if (t.status(feed, 200, { ref: 'R8.35', what: 'GET /activity' })) {
+      const ids = (feed.json.payments || []).map((p) => p.payment_id);
+      t.eq(new Set(ids).size, ids.length, {
+        ref: 'R3.4e', what: 'distinct payment ids in the feed', res: feed,
+        expected: 'every payment_id distinct', actual: JSON.stringify(ids),
+      });
+      t.eq(ids.length, 6, {
+        ref: 'R3.4e', what: 'two seeded plus four created payments', res: feed,
+      });
     }
   });
 

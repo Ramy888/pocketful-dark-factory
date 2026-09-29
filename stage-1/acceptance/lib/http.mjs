@@ -25,7 +25,13 @@ export function shellQuote(value) {
   return "'" + String(value).replace(/'/g, `'\\''`) + "'";
 }
 
-// A copy-pasteable reproduction command for one exchange.
+// A reproduction command for one exchange, copy-pasteable as long as the body is
+// small enough to be worth printing. A generated body (a fixture with hundreds of
+// seeded users, say) is truncated with an explicit marker rather than printed in
+// full: an unreadable thousand-line command helps nobody, and silently printing a
+// partial body that looks runnable would be worse.
+const MAX_INLINE_BODY = 600;
+
 export function curlFor({ base, method, path, headers, body, curlBody }) {
   const parts = ['curl -sS -i'];
   if (method && method !== 'GET') parts.push('-X ' + method);
@@ -33,8 +39,17 @@ export function curlFor({ base, method, path, headers, body, curlBody }) {
   for (const [name, value] of Object.entries(headers || {})) {
     parts.push('-H ' + shellQuote(`${name}: ${value}`));
   }
-  if (curlBody !== undefined) parts.push(curlBody);
-  else if (body !== undefined && body !== null) parts.push('--data-binary ' + shellQuote(body));
+  if (curlBody !== undefined) {
+    parts.push(curlBody);
+  } else if (body !== undefined && body !== null) {
+    const text = String(body);
+    if (text.length > MAX_INLINE_BODY) {
+      parts.push('--data-binary ' + shellQuote(text.slice(0, MAX_INLINE_BODY)));
+      parts.push(`# TRUNCATED: body is ${text.length} bytes; the check's own description says how it was built`);
+    } else {
+      parts.push('--data-binary ' + shellQuote(text));
+    }
+  }
   return parts.join(' ');
 }
 

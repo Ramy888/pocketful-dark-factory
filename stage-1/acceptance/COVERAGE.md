@@ -11,7 +11,7 @@ no check is listed as a gap, and every gap must carry a reason.
 | references deliberately left to out-of-band verification | 22 |
 | references with no check and no stated reason | 0 |
 | coordinator interpretations checked (advisory only) | 17 of 17 |
-| checks | 202 (159 blocking, 43 advisory) |
+| checks | 205 (160 blocking, 45 advisory) |
 
 A **blocking** check fails the suite and rejects a handoff. An **advisory** check is one
 where the specification text does not settle the answer: it records what the service did
@@ -45,7 +45,7 @@ its reasoning in the source and prints it on failure.
 | R2.3 | The submission is a containerized HTTP service, not a Python package; language, framework and storage are unrestricted. | **not checked over HTTP** — A constraint on the submission form, not on HTTP behaviour. |
 | R2.4 | The image must run on its own with -e PORT=<port> and a port mapping. | **not checked over HTTP** — How the container is started (-e PORT and a port mapping). The suite is pointed at whatever BASE_URL the launcher produced, so it exercises the result but cannot itself vary PORT. Checked out of band by starting the image twice. |
 | R2.5 | No outbound network at run time; all dependencies, initialization and seed data work inside the one container. | **not checked over HTTP** — Run-time network isolation. Checked out of band by starting the container with --network none; the suite is designed to pass in exactly that configuration, which is how it contributes evidence. |
-| R2.6 | Resource limits: 2 vCPU, 2 GiB, 60 s to first healthy response, up to 50 requests in flight, 5 s per request (10 s for POST /_test/reset), ephemeral disk. | 12: a sustained mixed load never breaks the seeded total or goes negative |
+| R2.6 | Resource limits: 2 vCPU, 2 GiB, 60 s to first healthy response, up to 50 requests in flight, 5 s per request (10 s for POST /_test/reset), ephemeral disk. | 02: reset stays inside the 10 second test-control budget<br>12: a sustained mixed load never breaks the seeded total or goes negative |
 | R2.7 | Runtime assets and dependencies are included in the image. | **not checked over HTTP** — Image contents. Checked out of band by inspecting the built image. |
 
 ### Specification 3.1
@@ -74,7 +74,7 @@ its reasoning in the source and prints it on failure.
 | R3.4b | Timestamps in responses are RFC 3339 with an explicit offset. | 01: timestamps are RFC 3339 with an explicit offset |
 | R3.4c | Unknown fields in a request body are ignored, never an error. | 01: unknown fields in a request body are ignored, never an error<br>02: unknown top-level fixture fields are ignored<br>06: decline and cancel accept an Idempotency-Key header without requiring one *(advisory)* |
 | R3.4d | Unknown query parameters are ignored. | 01: GET /health ignores unknown query parameters<br>01: unknown query parameters are ignored on list endpoints |
-| R3.4e | IDs are opaque strings of at most 64 characters. | 01: ids are opaque strings of at most 64 characters |
+| R3.4e | IDs are opaque strings of at most 64 characters. | 01: ids are opaque strings of at most 64 characters<br>04: a created payment never reuses a seeded id |
 
 ### Specification 4
 
@@ -97,7 +97,7 @@ its reasoning in the source and prints it on failure.
 | R4.15 | A split is not a feed item; its requests are visible to their own two parties and the payments that fulfil them follow the feed rule. | 07: payments settling a request appear in the feed under the ordinary rule<br>08: a split is not a feed item<br>08: a split's requests are visible only to their own two parties |
 | R4.16 | Visibility is one value on the payment, seen identically by both parties and by everyone else; a private payment is hidden from third parties, not from its own receiver. | 07: a private payment is visible to its own receiver and sender<br>07: a public payment is seen identically by parties and third parties |
 | R4.17 | amount is at most 1000000000 on any single request; no operation produces a balance outside 2^53; monetary arithmetic is exact. | 04: the maximum single amount of 1000000000 is accepted<br>04: minor-unit arithmetic stays exact at the top of the range |
-| R4.18 | The fixture format: currency, minor_units, users[], payments[], requests[] with the fields shown. | 02: seeded payments and requests are visible with their seeded values<br>02: a seeded request may arrive in a terminal status *(advisory)* |
+| R4.18 | The fixture format: currency, minor_units, users[], payments[], requests[] with the fields shown. | 02: seeded payments and requests are visible with their seeded values<br>02: a seeded request may arrive in a terminal status *(advisory)*<br>02: a fixture with two seeded payments sharing an id is not silently collapsed *(advisory)* |
 | R4.19 | Seeded users can log in with the given password immediately. | 02: seeded users log in with the fixture password immediately |
 | R4.20 | A seeded balance is the balance after every seeded payment; seeded payments are not replayed against balances. | 02: seeded balances are used as given and never re-derived from seeded payments |
 | R4.21 | A balance below zero in a fixture is a reset error: 422 validation_failed, changing nothing. | 02: a fixture balance below zero is 422 validation_failed and changes nothing |
@@ -115,7 +115,7 @@ its reasoning in the source and prints it on failure.
 | R5.5 | 403 forbidden: authenticated but not permitted to touch this resource. | 06: only the payer may pay; others get 403 and unknown ids get 404 |
 | R5.6 | 404 not_found: no such resource, or not visible to this caller. | 01: an unrouted path answers 404 not_found *(advisory)* |
 | R5.7 | 409 idempotency_key_reuse: a key already used by this caller with a different request body. | 05: the same key with a different body is 409 idempotency_key_reuse |
-| R5.8 | 422 validation_failed: a required field or query parameter is missing, or a stated rule is violated with no more specific code. | 02: a fixture missing users is 422 validation_failed<br>02: a structurally inconsistent fixture is rejected without changing state *(advisory)*<br>03: signup and login reject missing fields with 422 and wrong types with 400<br>04: to_handle of the wrong JSON type is 400, and absent is 422 |
+| R5.8 | 422 validation_failed: a required field or query parameter is missing, or a stated rule is violated with no more specific code. | 02: a fixture missing users is 422 validation_failed *(advisory)*<br>02: a structurally inconsistent fixture is rejected without changing state *(advisory)*<br>03: signup and login reject missing fields with 422 and wrong types with 400<br>04: to_handle of the wrong JSON type is 400, and absent is 422 |
 | R5.9 | A field of the correct JSON type with an invalid format or out-of-range value gives 422 validation_failed unless the endpoint specifies otherwise. | 04: an amount that is not an integral number is 422 |
 | R5.10 | Endpoint field rules take precedence: an invalid amount (including strings and booleans), a non-string note (including null) and any visibility other than public or private are 422; omission alone selects the optional-field default. | 04: a note of the wrong JSON type, including null, is 422 |
 | R5.11 | An integer-valued query parameter is plain decimal digits: 1e9, 4.0 and +4 are 422 whatever their numeric value. | 06: limit, offset and has_more behave as specified |
@@ -166,7 +166,7 @@ its reasoning in the source and prints it on failure.
 |---|---|---|
 | R8.1 | GET /me returns {user_id, display_name, handle, balance, currency, minor_units}. | 03: GET /me returns exactly the documented fields |
 | R8.2 | POST /payments takes to_handle, amount, note (optional, default "") and visibility (optional, default "public"). | 04: a payment returns the documented object and moves money<br>04: note defaults to "" and visibility defaults to public |
-| R8.3 | A payment is {payment_id, from_user_id, from_handle, to_user_id, to_handle, amount, currency, note, visibility, request_id, created_at}. | 04: a payment returns the documented object and moves money |
+| R8.3 | A payment is {payment_id, from_user_id, from_handle, to_user_id, to_handle, amount, currency, note, visibility, request_id, created_at}. | 04: a payment returns the documented object and moves money<br>04: a created payment never reuses a seeded id |
 | R8.4 | A caller balance below amount is 409 insufficient_funds. | 04: a balance below amount is 409 insufficient_funds and moves nothing<br>04: a payment may spend the whole balance but not one unit more<br>11: an unresolvable recipient beats a balance the caller does not have |
 | R8.5 | An amount below 1, above 1000000000, or not an integer is 422 validation_failed. | 04: an amount that is not an integral number is 422 |
 | R8.6 | to_handle equal to the caller own handle is 422 self_payment. | 04: paying your own handle is 422 self_payment<br>04: self_payment is decided before the balance is consulted *(advisory)*<br>11: a self payment beats a balance the caller does not have *(advisory)* |
@@ -226,7 +226,7 @@ its reasoning in the source and prints it on failure.
 | R10.6 | No dependency on the source process, files, volume, port or network address is allowed. | 10: an export moves to another container with no dependency on the source |
 | R10.7 | Import is replacement, not merge; repeating it restores the exported state without duplicating anything. | 10: import is replacement, not merge, and repeats without duplicating |
 | R10.8 | Invalid JSON follows section 5; missing fields, a wrong track or version, or an invalid state give 422 validation_failed without changing the destination. | 10: an invalid import is 422 and leaves the destination untouched<br>10: a state that did not come from this service is rejected, not half applied *(advisory)* |
-| R10.9 | Test control calls have a 10-second timeout. | 10: test control endpoints answer within the 10 second budget |
+| R10.9 | Test control calls have a 10-second timeout. | 02: reset stays inside the 10 second test-control budget<br>10: test control endpoints answer within the 10 second budget |
 | R10.10 | Export is an atomic, read-only snapshot; subsequent source writes do not change it. | 10: export is a snapshot: later writes do not change what it restores |
 | R10.11 | Preserve accounts and hashed-password login, existing bearer tokens, currency, balances, payments, requests, permissions, and all completed idempotent request bodies and original responses. | 10: an unchanged export restores every observable fact about the state |
 | R10.12 | Identities, timestamps and monetary records must not be regenerated or replayed against an already-net balance. | 10: an unchanged export restores every observable fact about the state |
