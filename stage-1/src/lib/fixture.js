@@ -213,7 +213,6 @@ async function validateFixture(fixture) {
     operatorIds: new Set(operatorIdsInput),
     idempotency: new Map(),
     tokensByValue: new Map(),
-    idCounter: 0,
     sequenceCounter: sequence,
   };
 }

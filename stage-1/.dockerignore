@@ -1,4 +1,5 @@
 acceptance/
+tests/
 node_modules/
 .git/
 *.log
