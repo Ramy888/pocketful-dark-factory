@@ -1,0 +1,9 @@
+{
+  "currency": "EUR",
+  "minor_units": 2,
+  "users": [
+    { "id": "u_solo", "email": "solo@example.com", "password": "correct horse", "display_name": "Solo", "handle": "solo", "balance": 0 }
+  ],
+  "payments": [],
+  "requests": []
+}

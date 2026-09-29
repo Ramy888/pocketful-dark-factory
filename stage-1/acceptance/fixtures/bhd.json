@@ -1,0 +1,13 @@
+{
+  "currency": "BHD",
+  "minor_units": 3,
+  "settlement_operator_ids": ["u_op"],
+  "users": [
+    { "id": "u_ada", "email": "ada@example.com", "password": "correct horse", "display_name": "Ada", "handle": "ada", "balance": 10000 },
+    { "id": "u_bob", "email": "bob@example.com", "password": "correct horse", "display_name": "Bob", "handle": "bob", "balance": 1 },
+    { "id": "u_cy", "email": "cy@example.com", "password": "correct horse", "display_name": "Cy", "handle": "cy", "balance": 0 },
+    { "id": "u_op", "email": "op@example.com", "password": "correct horse", "display_name": "Op", "handle": "op", "balance": 0 }
+  ],
+  "payments": [],
+  "requests": []
+}

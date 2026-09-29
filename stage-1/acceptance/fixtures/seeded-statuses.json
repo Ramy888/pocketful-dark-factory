@@ -1,0 +1,15 @@
+{
+  "currency": "EUR",
+  "minor_units": 2,
+  "users": [
+    { "id": "u_ada", "email": "ada@example.com", "password": "correct horse", "display_name": "Ada", "handle": "ada", "balance": 10000 },
+    { "id": "u_bob", "email": "bob@example.com", "password": "correct horse", "display_name": "Bob", "handle": "bob", "balance": 2500 }
+  ],
+  "payments": [],
+  "requests": [
+    { "id": "rq_p", "requester_id": "u_ada", "payer_id": "u_bob", "amount": 100, "note": "pending one", "status": "pending" },
+    { "id": "rq_d", "requester_id": "u_ada", "payer_id": "u_bob", "amount": 200, "note": "declined one", "status": "declined" },
+    { "id": "rq_c", "requester_id": "u_ada", "payer_id": "u_bob", "amount": 300, "note": "cancelled one", "status": "cancelled" },
+    { "id": "rq_x", "requester_id": "u_ada", "payer_id": "u_bob", "amount": 400, "note": "paid one", "status": "paid" }
+  ]
+}

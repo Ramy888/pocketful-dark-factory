@@ -1,0 +1,10 @@
+{
+  "currency": "EUR",
+  "minor_units": 2,
+  "users": [
+    { "id": "u_ada", "email": "ada@example.com", "password": "correct horse", "display_name": "Ada", "handle": "ada", "balance": 10000 },
+    { "id": "u_neg", "email": "neg@example.com", "password": "correct horse", "display_name": "Neg", "handle": "neg", "balance": -1 }
+  ],
+  "payments": [],
+  "requests": []
+}
