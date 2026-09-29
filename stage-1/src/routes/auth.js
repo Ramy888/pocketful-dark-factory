@@ -8,6 +8,19 @@ const { splitEmail, isValidEmailForm, deriveHandle } = require('../lib/handle');
 
 const MIN_PASSWORD_LENGTH = 8;
 
+// verifyPassword's scrypt call is the only cost in a login attempt, and it
+// only ran when a user existed to check against -- so an unknown email
+// answered in a few ms while a known one with the wrong password took the
+// full scrypt cost, a reliable timing oracle for account existence. This
+// dummy hash gives the unknown-email path the same one-scrypt-call cost.
+// Computed once, lazily, since hashPassword is async and there is no
+// top-level await in CommonJS.
+let dummyHashPromise = null;
+function getDummyHash() {
+  if (!dummyHashPromise) dummyHashPromise = hashPassword('not-a-real-account-timing-decoy');
+  return dummyHashPromise;
+}
+
 // A present field of the wrong JSON type is 400 malformed_request (R5.2); an
 // absent required field is 422 validation_failed (R5.8). The two are not the
 // same error, so presence and type are checked as two separate questions.
@@ -38,7 +51,6 @@ function registerAuthRoutes(router, store) {
     }
     const parts = splitEmail(email);
     if (!parts) throw new AppError(422, 'validation_failed', 'email must be of the form local@domain');
-    if (displayName.length === 0) throw new AppError(422, 'validation_failed', 'display_name must not be empty');
 
     const handle = deriveHandle(parts.local);
 
@@ -80,7 +92,8 @@ function registerAuthRoutes(router, store) {
     const password = requireStringField(body, 'password');
 
     const user = store.state.usersByEmail.get(email);
-    const ok = user ? await verifyPassword(password, user.passwordHash) : false;
+    const hashToCheck = user ? user.passwordHash : await getDummyHash();
+    const ok = await verifyPassword(password, hashToCheck);
     if (!user || !ok) throw new AppError(401, 'unauthenticated', 'wrong password or unknown email');
 
     const token = issueToken(store, user);

@@ -2,7 +2,10 @@
 
 const { AppError } = require('./errors');
 
-const BEARER_RE = /^Bearer (.+)$/;
+// RFC 9110 §11.1: the auth-scheme token is case-insensitive. The token
+// value itself is captured verbatim (case-insensitive matching does not
+// alter what a capture group returns), so only "Bearer" itself is lenient.
+const BEARER_RE = /^Bearer (.+)$/i;
 
 // §6: every protected endpoint needs `Authorization: Bearer <token>`. A
 // missing header, wrong scheme, empty token or unknown token are all the
