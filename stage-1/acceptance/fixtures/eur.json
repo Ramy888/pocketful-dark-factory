@@ -1,0 +1,142 @@
+{
+  "currency": "EUR",
+  "minor_units": 2,
+  "settlement_operator_ids": [
+    "u_op",
+    "u_op2"
+  ],
+  "users": [
+    {
+      "id": "u_ada",
+      "email": "ada@example.com",
+      "password": "correct horse",
+      "display_name": "Ada",
+      "handle": "ada",
+      "balance": 10000
+    },
+    {
+      "id": "u_bob",
+      "email": "bob@example.com",
+      "password": "correct horse",
+      "display_name": "Bob",
+      "handle": "bob",
+      "balance": 2500
+    },
+    {
+      "id": "u_cy",
+      "email": "cy@example.com",
+      "password": "correct horse",
+      "display_name": "Cy",
+      "handle": "cy",
+      "balance": 0
+    },
+    {
+      "id": "u_dee",
+      "email": "dee@example.com",
+      "password": "correct horse",
+      "display_name": "Dee",
+      "handle": "dee",
+      "balance": 100
+    },
+    {
+      "id": "u_eve",
+      "email": "eve@example.com",
+      "password": "correct horse",
+      "display_name": "Eve",
+      "handle": "eve",
+      "balance": 500
+    },
+    {
+      "id": "u_op",
+      "email": "op@example.com",
+      "password": "correct horse",
+      "display_name": "Op",
+      "handle": "op",
+      "balance": 0
+    },
+    {
+      "id": "u_rich",
+      "email": "rich@example.com",
+      "password": "correct horse",
+      "display_name": "Rich",
+      "handle": "rich",
+      "balance": 2000000000
+    },
+    {
+      "id": "u_op2",
+      "email": "op2@example.com",
+      "password": "correct horse",
+      "display_name": "Op Two",
+      "handle": "op2",
+      "balance": 0
+    }
+  ],
+  "payments": [
+    {
+      "id": "p_pub_ab",
+      "from_user_id": "u_ada",
+      "to_user_id": "u_bob",
+      "amount": 500,
+      "note": "coffee",
+      "visibility": "public"
+    },
+    {
+      "id": "p_prv_ab",
+      "from_user_id": "u_ada",
+      "to_user_id": "u_bob",
+      "amount": 700,
+      "note": "secret",
+      "visibility": "private"
+    },
+    {
+      "id": "p_pub_cd",
+      "from_user_id": "u_cy",
+      "to_user_id": "u_dee",
+      "amount": 100,
+      "note": "bus",
+      "visibility": "public"
+    },
+    {
+      "id": "p_prv_cd",
+      "from_user_id": "u_cy",
+      "to_user_id": "u_dee",
+      "amount": 200,
+      "note": "hush",
+      "visibility": "private"
+    }
+  ],
+  "requests": [
+    {
+      "id": "rq_bob_ada",
+      "requester_id": "u_bob",
+      "payer_id": "u_ada",
+      "amount": 1200,
+      "note": "taxi",
+      "status": "pending"
+    },
+    {
+      "id": "rq_ada_bob",
+      "requester_id": "u_ada",
+      "payer_id": "u_bob",
+      "amount": 300,
+      "note": "book",
+      "status": "pending"
+    },
+    {
+      "id": "rq_over",
+      "requester_id": "u_bob",
+      "payer_id": "u_cy",
+      "amount": 999999,
+      "note": "yacht",
+      "status": "pending"
+    },
+    {
+      "id": "rq_ada_dee",
+      "requester_id": "u_ada",
+      "payer_id": "u_dee",
+      "amount": 100,
+      "note": "gum",
+      "status": "pending"
+    }
+  ]
+}
