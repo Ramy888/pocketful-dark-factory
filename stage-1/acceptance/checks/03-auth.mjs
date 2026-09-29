@@ -1,7 +1,7 @@
 // Specification 6 and the handle rules of specification 4.
 
 import { suite, test } from '../lib/runner.mjs';
-import { api, reset, login, signup, me, key, PW } from '../lib/helpers.mjs';
+import { api, reset, resetWith, login, signup, me, key, PW } from '../lib/helpers.mjs';
 
 const HANDLE_RE = /^[a-z0-9_]{1,20}$/;
 
@@ -336,6 +336,78 @@ suite('03 authentication and handles', () => {
     severity: 'advisory',
     why: 'The specification lists the signup cases in a table without stating an evaluation order. '
        + 'Decision D6 fixes validation -> email_taken -> handle_taken.',
+  });
+
+  test('a signup never mints a user id the fixture already seeded', ['R4.3', 'R1.7', 'R6.10'], async (t) => {
+    // The specification's own signup example returns "user_id": "u_1", and its fixture
+    // example seeds ids of exactly that shape, so a fixture seeding u_1 is ordinary input.
+    // If a generated id can collide with a seeded one, the seeded account is displaced and
+    // its bearer token starts resolving to somebody else.
+    for (const seededId of ['u_1', 'u_2', 'u_3']) {
+      const fx = {
+        currency: 'EUR', minor_units: 2,
+        users: [{ id: seededId, email: 'seeded@example.com', password: PW, display_name: 'Seeded', handle: 'seeded', balance: 777 }],
+        payments: [], requests: [],
+      };
+      await resetWith(t, fx, 204);
+      const seeded = await login(t, 'seeded@example.com');
+      if (!seeded) continue;
+      const before = await me(t, seeded.token);
+      if (!t.status(before, 200, { ref: 'R8.1', what: `GET /me for the seeded user (fixture id ${seededId})` })) continue;
+
+      const minted = [];
+      for (let i = 0; i < 4; i++) {
+        const res = await signup(t, `fresh${i}-${seededId}@example.com`, `Fresh ${i}`);
+        if (!t.status(res, 201, { ref: 'R6.1', what: `signup number ${i + 1}` })) break;
+        minted.push(res.json.user_id);
+      }
+      t.ok(!minted.includes(seededId), {
+        ref: 'R4.3', what: `ids minted by signup while ${seededId} was seeded`,
+        expected: `no minted id equal to the seeded id ${seededId}`,
+        actual: `minted ${JSON.stringify(minted)}`,
+      });
+
+      // The decisive check: the seeded user's own token must still be the seeded user.
+      const after = await me(t, seeded.token);
+      if (!t.status(after, 200, { ref: 'R6.10', what: "the seeded user's token after four signups" })) continue;
+      t.deep(
+        { user_id: after.json.user_id, handle: after.json.handle, balance: after.json.balance },
+        { user_id: before.json.user_id, handle: before.json.handle, balance: before.json.balance },
+        {
+          ref: 'R6.10',
+          what: `the seeded user's own bearer token still identifies the seeded user (fixture id ${seededId})`,
+          res: after,
+        },
+      );
+    }
+  });
+
+  test('reset stays inside the budget even when no two seeded passwords match', ['R10.9', 'R2.6'], async (t) => {
+    // The companion blocking check seeds one shared password, which is what this repo's
+    // fixtures and the specification's example do. This one removes that regularity: the
+    // specification permits it, and nothing about a fixture promises repeated passwords.
+    const users = [];
+    for (let i = 0; i < 500; i++) {
+      users.push({
+        id: `u_${i}`, email: `u${i}@example.com`, password: `distinct-password-${i}`,
+        display_name: `User ${i}`, handle: `u${i}`, balance: 100,
+      });
+    }
+    const res = await resetWith(t, { currency: 'EUR', minor_units: 2, users, payments: [], requests: [] }, null);
+    t.status(res, 204, { ref: 'R3.3', what: 'POST /_test/reset with 500 distinct passwords' });
+    t.ok(res.ms <= 10000, {
+      ref: 'R10.9', what: 'POST /_test/reset duration with 500 distinct seeded passwords', res,
+      expected: 'at most 10000 ms', actual: `${res.ms} ms`,
+    });
+  }, {
+    slow: true,
+    severity: 'advisory',
+    why: 'The 10 s budget is stated, and a fixture of 500 distinct passwords is permitted, so '
+       + 'strictly this is the same requirement as the blocking shared-password check. It is '
+       + 'advisory because the input compounds two choices the specification never makes: how '
+       + 'many users a fixture seeds, and that none of their passwords repeat. Recorded so the '
+       + 'residual cost of per-password hashing stays visible rather than being hidden by a '
+       + 'memoisation that the common case happens to satisfy.',
   });
 
   test('no plaintext password is recoverable from the exported state', ['R6.11'], async (t) => {
