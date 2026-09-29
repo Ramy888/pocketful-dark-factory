@@ -9,32 +9,26 @@ goes in the task the human posts into the room.
 
 | Seat | Mandate | Runtime | Model | Owns |
 |---|---|---|---|---|
-| coordinator | [mandates/coordinator.md](mandates/coordinator.md) | OpenCode | moonshotai/Kimi-K2.5 | plan, sequencing, decisions log, acceptance bookkeeping, the report |
-| implementer | [mandates/implementer.md](mandates/implementer.md) | OpenCode | MiniMaxAI/MiniMax-M2.5 | code and its tests, one work item at a time, handoffs with reproducible evidence |
-| verifier | [mandates/verifier.md](mandates/verifier.md) | OpenCode | zai-org/GLM-5.3 | acceptance checks derived from the specification before the build, independent reproduction, adversarial probes, the veto |
+| coordinator | [mandates/coordinator.md](mandates/coordinator.md) | Claude Code | claude-opus-5 | plan, sequencing, decisions log, acceptance bookkeeping, the report |
+| implementer | [mandates/implementer.md](mandates/implementer.md) | Claude Code | claude-sonnet-5 | code and its tests, one work item at a time, handoffs with reproducible evidence |
+| verifier | [mandates/verifier.md](mandates/verifier.md) | Claude Code | claude-opus-5 | acceptance checks derived from the specification before the build, independent reproduction, adversarial probes, the veto |
 
-Three model families, one per seat, so no two seats share a blind spot. That is the point of
-the split: a check that thinks like the thing it is checking is not a check. `seats.conf` is
-the single source of truth for these rows, and a test fails if any mandate disagrees with it
-or if every seat ends up on one model.
+`seats.conf` is the single source of truth for these rows: it names each seat's runtime, model
+and display name, `create-seats` launches from it, the mandates are tested against it, and the
+mandates ship under the display names because that is what a reader matches them by.
 
-**They were chosen on evidence, not reputation.** Each candidate was handed a function with an
-off-by-one against a stated rule and asked for a verdict. All three found it; the verifier's
-model was the one that cited the file and line, named the exact input that breaks it, and gave
-the one-character fix. A model that merely agrees something is wrong is not useful in that seat.
+**A roster of three different model families was measured first, and retired on arithmetic.**
+One seat per family, chosen by handing each candidate a function with an off-by-one against a
+stated rule and keeping the one that cited the line and named the breaking input. It built all
+four stages of the practice track and passed every shipped check. It also cost $24.53 to do
+that on a shared counter, which is a problem small enough to read in a minute. The graded work
+is a different order of work, so the credit would not have reached the end of it. A run that
+cannot afford to finish scores nothing, so the band went back to the runtime that is paid for.
 
-The earlier build ran all three seats on one vendor, with the verifier optionally on a second.
-That was abandoned for a plainer reason than quality: a subscription runtime hits a rolling
-usage window you cannot see coming, and a run that cannot be re-dispatched loses the whole
-deliverable when it does.
-
-Per-request inference does not remove that risk, it changes its shape. There is still a
-ceiling, and more than one: what is left to spend, and how many seats may call at once. The
-difference is that what is left to spend is a figure you can read before you dispatch and
-divide by the cost of a rehearsal. That is the whole argument: not that the run cannot stall,
-but that you can find out beforehand whether it will. Measure a rehearsal
-with `opencode stats`, multiply by the shape of the real run, and compare. If it does not fit,
-that is a decision to take before the dispatch, not a discovery halfway through.
+Two seats now share a family, and that is a genuine loss: the verifier no longer checks from
+outside the blind spots of the seat that built the work. It is taken deliberately, with the
+measurement written down rather than the preference. The rehearsal is worth reading for what it
+caught rather than what it cost — see the write-up kept beside this factory.
 
 Each seat runs in its own git worktree (`seat/<role>` branch), so the verifier always tests the
 exact handed-off commit, never the implementer's working copy. Each worktree is configured with

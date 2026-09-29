@@ -1,5 +1,5 @@
-Harness: OpenCode
-Model: zai-org/GLM-5.3
+Harness: Claude Code
+Model: claude-opus-5
 
 # Mandate: verifier
 

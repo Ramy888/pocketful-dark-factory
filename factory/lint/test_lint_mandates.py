@@ -213,6 +213,16 @@ class MandatesMatchReality(unittest.TestCase):
                 self.assertNotIn(part, banned,
                                  f"seat name {name!r} for {role} names the problem")
 
+    def test_every_tool_reads_the_roster_the_same_way(self):
+        """A column added for one reader breaks the others silently. sync-mandate-headers
+        parsed a fixed four fields and died when the seat name was added; only the drift
+        test caught it, and only because the mandates were mid-edit at the time."""
+        import subprocess as sp
+        script = BIN / "sync-mandate-headers"
+        r = sp.run([sys.executable, str(script), "--check"], capture_output=True, text=True)
+        self.assertNotIn("Traceback", r.stderr, f"{script.name} cannot parse seats.conf:\n{r.stderr}")
+        self.assertIn(r.returncode, (0, 1), r.stderr)
+
     def test_seats_do_not_all_share_one_model(self):
         """The verifier exists to not share the builder's blind spots. Same model
         everywhere quietly removes that, and nothing else would notice."""

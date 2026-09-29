@@ -1,5 +1,5 @@
-Harness: OpenCode
-Model: moonshotai/Kimi-K2.5
+Harness: Claude Code
+Model: claude-opus-5
 
 # Mandate: coordinator
 

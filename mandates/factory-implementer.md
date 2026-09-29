@@ -1,5 +1,5 @@
-Harness: OpenCode
-Model: MiniMaxAI/MiniMax-M2.5
+Harness: Claude Code
+Model: claude-sonnet-5
 
 # Mandate: implementer
 

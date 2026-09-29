@@ -81,4 +81,12 @@ if [ -f "$seat_home/.claude/CLAUDE.md" ]; then
   exit 1
 fi
 
+# Attribution has to follow the seat, not the checkout. Per-worktree git config only works
+# while a seat stays in its own worktree; point a band at one shared checkout — which is the
+# ordinary way to run it — and every commit silently takes the owner's identity instead. Then
+# the history says the human wrote it, which is the opposite of the record a reader needs.
+export GIT_AUTHOR_NAME="$role" GIT_COMMITTER_NAME="$role"
+export GIT_AUTHOR_EMAIL="$role@${SEAT_EMAIL_DOMAIN:-factory.test}"
+export GIT_COMMITTER_EMAIL="$GIT_AUTHOR_EMAIL"
+
 HOME="$seat_home" XDG_CONFIG_HOME="$seat_home/.config" exec opencode "$@"

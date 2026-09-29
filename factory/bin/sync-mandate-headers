@@ -16,7 +16,10 @@ rows = {}
 for line in (repo / "factory" / "seats.conf").read_text().splitlines():
     line = line.strip()
     if line and not line.startswith("#"):
-        role, harness, model, runtime = line.split("|")
+        parts = line.split("|")
+        if len(parts) < 4:
+            sys.exit(f"seats.conf: not enough fields in {line!r}")
+        role, harness, model = parts[0], parts[1], parts[2]
         rows[role] = (harness, model)
 
 changed = 0
