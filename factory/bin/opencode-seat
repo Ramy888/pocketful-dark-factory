@@ -28,6 +28,14 @@ shift || true
 model=$(grep -v '^[[:space:]]*#' "$repo/factory/seats.conf" \
         | awk -F'|' -v r="$role" '$1==r {print $3; exit}')
 mandate="$repo/factory/mandates/$role.md"
+
+# A seat is spawned by the supervisor, not from a shell, so it inherits none of an operator's
+# exported credentials: the provider config resolves to an empty key and the seat answers
+# nothing, without an error anyone sees. Read the credential from a file instead.
+: "${SEAT_ENV_FILE:=$HOME/.config/featherless/env}"
+if [ -f "$SEAT_ENV_FILE" ]; then
+  . "$SEAT_ENV_FILE"
+fi
 [ -f "$mandate" ] || { echo "opencode-seat: no mandate at $mandate" >&2; exit 1; }
 [ -n "$model" ] || { echo "opencode-seat: '$role' has no row in factory/seats.conf" >&2; exit 1; }
 [ -f "$OPERATOR_OPENCODE_CONFIG" ] || {
@@ -39,7 +47,7 @@ mkdir -p "$seat_config"
 
 # Regenerated every start: the operator's provider block, plus this seat's default model.
 python3 - "$OPERATOR_OPENCODE_CONFIG" "$seat_config/opencode.json" "$model" "$mandate" <<'PY'
-import json, sys
+import json, os, re, sys
 src, dst, model, mandate = sys.argv[1], sys.argv[2], sys.argv[3], sys.argv[4]
 cfg = json.load(open(src))
 provider = cfg.get("provider", {})
@@ -53,6 +61,16 @@ if owner is None:
 out = {"$schema": cfg.get("$schema", "https://opencode.ai/config.json"),
        "provider": provider, "model": f"{owner}/{model}",
        "instructions": [mandate]}
+# Fail here, loudly, rather than letting the seat start and go quiet: an unresolved
+# credential looks exactly like a seat with nothing to say.
+missing = sorted({m for v in provider.values()
+                  for m in re.findall(r"\{env:([A-Za-z_][A-Za-z0-9_]*)\}",
+                                      json.dumps(v.get("options", {})))
+                  if not os.environ.get(m)})
+if missing:
+    sys.exit("opencode-seat: the provider config needs " + ", ".join(missing)
+             + " but it is not set. Put it in " + os.environ.get("SEAT_ENV_FILE", "the seat env file")
+             + " — a seat is spawned by the supervisor and inherits no shell exports.")
 json.dump(out, open(dst, "w"), indent=2)
 print(f"seat {dst}: model {owner}/{model}, mandate {mandate}", file=sys.stderr)
 PY
