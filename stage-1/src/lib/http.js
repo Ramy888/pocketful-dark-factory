@@ -2,10 +2,24 @@
 
 const { AppError } = require('./errors');
 
+// Content-Length is set explicitly on every response. Node only infers
+// framing (chunked Transfer-Encoding) when a body is written; on a bodyless
+// response (HEAD, 204) it infers nothing, which leaves a keep-alive
+// connection unframed and the client waiting for a close that never comes.
+//
+// HEAD gets Content-Length: 0, not the GET-equivalent length: Node never
+// writes body bytes for a HEAD response, and a client that takes a nonzero
+// Content-Length literally (curl's `-X HEAD`, unlike its `-I`/`--head`,
+// does not know to stop after headers) would otherwise hang or error
+// waiting for bytes that were never coming.
 function sendJson(res, status, payload) {
-  const body = JSON.stringify(payload);
-  res.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8' });
-  res.end(body);
+  const isHead = res.req && res.req.method === 'HEAD';
+  const body = Buffer.from(JSON.stringify(payload), 'utf8');
+  res.writeHead(status, {
+    'Content-Type': 'application/json; charset=utf-8',
+    'Content-Length': isHead ? 0 : body.length,
+  });
+  res.end(isHead ? undefined : body);
 }
 
 function sendError(res, status, code, message) {
@@ -13,7 +27,7 @@ function sendError(res, status, code, message) {
 }
 
 function sendNoContent(res, status) {
-  res.writeHead(status || 204);
+  res.writeHead(status || 204, { 'Content-Length': 0 });
   res.end();
 }
 

@@ -6,10 +6,13 @@ const { createRouter } = require('./lib/router');
 const { AppError } = require('./lib/errors');
 const { sendError, readJsonBody } = require('./lib/http');
 const { registerHealthRoutes } = require('./routes/health');
+const { registerTestResetRoutes } = require('./routes/testReset');
+const { Store } = require('./store');
 
-function buildRouter() {
+function buildRouter(store) {
   const router = createRouter();
   registerHealthRoutes(router);
+  registerTestResetRoutes(router, store);
   return router;
 }
 
@@ -55,11 +58,14 @@ function createApp(router) {
 }
 
 function createServer() {
-  const router = buildRouter();
+  const store = new Store();
+  const router = buildRouter(store);
   const app = createApp(router);
-  return http.createServer((req, res) => {
+  const server = http.createServer((req, res) => {
     app(req, res);
   });
+  server.store = store;
+  return server;
 }
 
 function start() {
