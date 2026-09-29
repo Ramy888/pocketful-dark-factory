@@ -41,9 +41,34 @@ copy "$repo/factory/FACTORY.md" "FACTORY.md"
 # The seat roster is not documentation: FACTORY.md's crew table is generated from it and the
 # shipped tests read it, so a copy without it fails on its own paths.
 copy "$repo/factory/seats.conf" "factory/seats.conf"
-for m in "$repo"/factory/mandates/*.md; do
-  copy "$m" "mandates/$(basename "$m")"
-done
+# A grader matches every seat in the room to a mandate file named after that seat, so the
+# mandates ship under the display names in seats.conf rather than under the role names the
+# factory works with. Same file, the name a reader can match.
+while IFS='|' read -r role _harness _model _runtime name; do
+  case "$role" in ''|\#*) continue ;; esac
+  copy "$repo/factory/mandates/$role.md" "mandates/${name:-$role}.md"
+done < <(grep -v '^[[:space:]]*#' "$repo/factory/seats.conf")
+
+# A mandate left over from an earlier roster describes a seat that is not in the room. It is
+# not harmless: half the score is whether a reader can tell how this factory is staffed.
+# Scoped to mandates/, and to the names this roster does not claim.
+expected=$(grep -v '^[[:space:]]*#' "$repo/factory/seats.conf" \
+           | awk -F'|' 'NF{n=$5; if(n=="") n=$1; print n ".md"}')
+if [ -d "$dest/mandates" ]; then
+  for existing in "$dest"/mandates/*.md; do
+    [ -e "$existing" ] || continue
+    base=$(basename "$existing")
+    if ! printf '%s\n' "$expected" | grep -qx "$base"; then
+      changed=1
+      if (( check )); then
+        echo "would remove: mandates/$base (no seat of that name in seats.conf)"
+      else
+        rm "$existing"
+        echo "removed: mandates/$base (no seat of that name in seats.conf)"
+      fi
+    fi
+  done
+fi
 
 # The rubric asks whether another team could stand this factory up from FACTORY.md and the
 # mandates. They describe scripts, so shipping the scripts is what makes that true.

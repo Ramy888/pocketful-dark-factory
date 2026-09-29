@@ -158,12 +158,23 @@ class MandatesMatchReality(unittest.TestCase):
         for line in conf.read_text().splitlines():
             line = line.strip()
             if line and not line.startswith("#"):
-                role, harness, model, runtime = line.split("|")
-                rows[role] = (harness, model, runtime)
+                parts = line.split("|")
+                role, harness, model, runtime = parts[:4]
+                name = parts[4] if len(parts) > 4 and parts[4] else role
+                rows[role] = (harness, model, runtime, name)
         return rows
 
+    def _mandate(self, role):
+        """The factory works with <role>.md; a deliverable ships it under the seat's display
+        name, because that is what a grader matches. Find it either way."""
+        name = self._rows()[role][3]
+        for candidate in (MANDATES / f"{name}.md", MANDATES / f"{role}.md"):
+            if candidate.is_file():
+                return candidate
+        raise AssertionError(f"no mandate for {role} as {name}.md or {role}.md in {MANDATES}")
+
     def _declared(self, role, field):
-        text = (MANDATES / f"{role}.md").read_text()
+        text = self._mandate(role).read_text()
         m = re.search(rf"(?im)^[-*_ \t]*{field}[*_ \t]*:[*_ \t]*(.+?)\s*$", text)
         return m.group(1) if m else None
 
@@ -172,20 +183,40 @@ class MandatesMatchReality(unittest.TestCase):
 
     def test_every_seat_has_a_mandate(self):
         for role in self._rows():
-            self.assertTrue((MANDATES / f"{role}.md").is_file(),
-                            f"seats.conf names {role}, but mandates/{role}.md is missing")
+            self._mandate(role)   # raises with the names it looked for
 
     def test_mandate_headers_match_seats_conf(self):
-        for role, (harness, model, _runtime) in self._rows().items():
+        for role, (harness, model, _runtime, _name) in self._rows().items():
             self.assertEqual(self._declared(role, "Harness"), harness,
                              f"{role}.md declares a different harness than seats.conf")
             self.assertEqual(self._declared(role, "Model"), model,
                              f"{role}.md declares a different model than seats.conf")
 
+    def test_every_seat_name_is_distinct_and_slug_safe(self):
+        """A grader matches a seat to a mandate by name, ignoring case and punctuation, so
+        two seats whose names differ only by punctuation collide into one mandate."""
+        import re as _re
+        slugs = [_re.sub(r"[^a-z0-9]", "", n.lower())
+                 for _h, _m, _r, n in self._rows().values()]
+        self.assertEqual(len(slugs), len(set(slugs)),
+                         "two seat names reduce to the same mandate filename")
+        for s in slugs:
+            self.assertTrue(s, "a seat name reduces to an empty mandate filename")
+
+    def test_seat_names_say_nothing_about_the_problem(self):
+        """The mandates ship under these names. A name that names the track fails the test
+        the mandates are written to pass, whatever the vocabulary scan makes of a filename."""
+        banned = {"pocketful", "tablekeeper", "wallet", "payment", "payments", "money",
+                  "reservation", "restaurant", "booking", "table"}
+        for role, (_h, _m, _r, name) in self._rows().items():
+            for part in re.split(r"[^a-z0-9]+", name.lower()):
+                self.assertNotIn(part, banned,
+                                 f"seat name {name!r} for {role} names the problem")
+
     def test_seats_do_not_all_share_one_model(self):
         """The verifier exists to not share the builder's blind spots. Same model
         everywhere quietly removes that, and nothing else would notice."""
-        models = [m for _h, m, _r in self._rows().values()]
+        models = [m for _h, m, _r, _n in self._rows().values()]
         self.assertGreater(len(set(models)), 1,
                            "every seat runs the same model; the independent check is not independent")
 

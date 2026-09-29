@@ -16,11 +16,6 @@
 #                     seats in a different working copy gets its own prefix instead of
 #                     overwriting the seats a previous run configured.
 #        CODEX_EFFORT reasoning effort for a Codex-harness seat (default: high)
-#        SEAT_NAME_PREFIX  prepended to each seat's display name (default: none). Band agent
-#                     names are unique per account and cannot be deleted, so a name a previous
-#                     run took is gone for good. NOTE for a submission: the grader matches each
-#                     seat in the room to a mandate file named after it, so a prefix here means
-#                     the mandate files carry the same prefix.
 #        SKIP_JAM     prepare the worktrees and seat identities but create no agents.
 #                     Creating an agent is permanent — Jam has no command to delete one —
 #                     so rebuilding a working copy for a second run uses this rather than
@@ -65,6 +60,7 @@ field() { row "$1" | cut -d'|' -f"$2"; }
 harness() { field "$1" 2; }
 model()   { field "$1" 3; }
 runtime() { field "$1" 4; }
+seatname() { n=$(field "$1" 5); echo "${n:-$1}"; }
 
 
 if [[ $# -eq 0 ]]; then
@@ -133,7 +129,7 @@ for role in "$@"; do
   jam agent create --json \
     --session "${SEAT_PREFIX:-factory}-$role" \
     "${runtime[@]}" \
-    --name "${SEAT_NAME_PREFIX:-}$role" \
+    --name "$(seatname "$role")" \
     --description "$(description "$role")" \
     --cwd "$worktree" \
     ${instructions[@]+"${instructions[@]}"}
