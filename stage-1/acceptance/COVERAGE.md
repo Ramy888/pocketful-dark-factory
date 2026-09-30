@@ -40,13 +40,13 @@ its reasoning in the source and prints it on failure.
 
 | ref | requirement | checks |
 |---|---|---|
-| R2.1 | An HTTP service, a Dockerfile and a RUN.md with a command that builds and starts the service without manual setup. | **not checked over HTTP** — Repository artefacts (Dockerfile, RUN.md) and the build command. Verified by inspecting the delivered tree and running the documented commands, not over HTTP. |
+| R2.1 | An HTTP service, a Dockerfile and a RUN.md with a command that builds and starts the service without manual setup. | **not checked over HTTP** — Repository artefacts and the documented start command, not HTTP behaviour. Runnable: from stage-1/, `docker build -t pocketful-stage1 .` then `docker run -e PORT=8080 -p 8080:8080 pocketful-stage1` -- exactly RUN.md's two commands, copied not paraphrased -- then `curl http://localhost:8080/health` gives {"status":"ok"}. Run at every verdict from W1 onward. |
 | R2.2 | A docker-compose.yml is optional. | **not checked over HTTP** — States that a file is optional. Nothing to check. |
 | R2.3 | The submission is a containerized HTTP service, not a Python package; language, framework and storage are unrestricted. | **not checked over HTTP** — A constraint on the submission form, not on HTTP behaviour. |
 | R2.4 | The image must run on its own with -e PORT=<port> and a port mapping. | **not checked over HTTP** — How the container is started (-e PORT and a port mapping). The suite is pointed at whatever BASE_URL the launcher produced, so it exercises the result but cannot itself vary PORT. Checked out of band by starting the image twice. |
 | R2.5 | No outbound network at run time; all dependencies, initialization and seed data work inside the one container. | **not checked over HTTP** — Run-time network isolation. Checked out of band: start the container with --network none (only lo, no route out) and run this suite INSIDE it against loopback, since --network none makes a published port inert and a host-side run cannot connect at all. Verified at W8: identical results inside the isolated container and outside it, so the suite contributes evidence rather than merely claiming to. |
 | R2.6 | Resource limits: 2 vCPU, 2 GiB, 60 s to first healthy response, up to 50 requests in flight, 5 s per request (10 s for POST /_test/reset), ephemeral disk. | 02: reset stays inside the 10 second test-control budget<br>03: reset stays inside the budget even when no two seeded passwords match *(advisory)*<br>12: a sustained mixed load never breaks the seeded total or goes negative |
-| R2.7 | Runtime assets and dependencies are included in the image. | **not checked over HTTP** — Image contents. Checked out of band by inspecting the built image. |
+| R2.7 | Runtime assets and dependencies are included in the image. | **not checked over HTTP** — Image contents, not HTTP behaviour. 'Inspecting the image' was too vague to run, so: `docker run --rm IMAGE sh -c 'cat /app/package.json'` shows dependencies {} and devDependencies {}; `docker run --rm IMAGE sh -c 'ls /app'` gives exactly `package.json src`; no node_modules exists outside node's own install; and every require() under /app/src resolves to a relative path or one of three builtins (crypto, http, util). The decisive evidence is shared with R2.5: a container with no network interfaces serves the whole suite, and nothing missing from the image could have been fetched. |
 
 ### Specification 3.1
 
@@ -234,7 +234,7 @@ its reasoning in the source and prints it on failure.
 | R10.14 | Existing receipts, tokens and retries remain valid after import; replacing the state with a fresh fixture does not satisfy this. | 10: an unchanged export restores every observable fact about the state |
 | R10.15 | Import removes all previous destination data and credentials. | 10: an unchanged export restores every observable fact about the state<br>10: import is replacement, not merge, and repeats without duplicating |
 | R10.16 | Reset clears all state, including imported state. | 10: reset clears imported state |
-| R10.17 | State need not survive an abrupt container restart. | **not checked over HTTP** — An explicit relaxation. The suite never restarts the container and never requires state to survive one. |
+| R10.17 | State need not survive an abrupt container restart. | **not checked over HTTP** — An explicit relaxation -- nothing can fail it, so the only risk is the suite demanding MORE than the specification allows. Verified rather than asserted: the suite imports only node:fs, node:http, node:https, node:path and node:url, so it has no mechanism to restart anything, and no check mentions state surviving a restart. Observed behaviour at W2b for the record: a restart clears all state and the service returns to health in ~2 s, which the specification permits. |
 | R10.18 | Exports may contain credentials and session tokens; handle them as private test artifacts. | **not checked over HTTP** — An instruction to whoever holds an export, not a service behaviour. Honoured rather than tested: the suite never writes an export to disk and never prints one. |
 
 ### Specification 11
@@ -298,7 +298,7 @@ building and starting the image.
 - **R1.11** — Deposits, top-ups, withdrawals, cards and bank integrations are out of scope; money moves only between existing wallets.
   - A statement of scope. Partially covered in substance: the suite checks that money only moves between existing wallets (unknown handle is 404 everywhere). The absence of deposit, top-up, withdrawal, card and bank endpoints is not something an acceptance suite can prove, only the absence of a documented one.
 - **R2.1** — An HTTP service, a Dockerfile and a RUN.md with a command that builds and starts the service without manual setup.
-  - Repository artefacts (Dockerfile, RUN.md) and the build command. Verified by inspecting the delivered tree and running the documented commands, not over HTTP.
+  - Repository artefacts and the documented start command, not HTTP behaviour. Runnable: from stage-1/, `docker build -t pocketful-stage1 .` then `docker run -e PORT=8080 -p 8080:8080 pocketful-stage1` -- exactly RUN.md's two commands, copied not paraphrased -- then `curl http://localhost:8080/health` gives {"status":"ok"}. Run at every verdict from W1 onward.
 - **R2.2** — A docker-compose.yml is optional.
   - States that a file is optional. Nothing to check.
 - **R2.3** — The submission is a containerized HTTP service, not a Python package; language, framework and storage are unrestricted.
@@ -308,7 +308,7 @@ building and starting the image.
 - **R2.5** — No outbound network at run time; all dependencies, initialization and seed data work inside the one container.
   - Run-time network isolation. Checked out of band: start the container with --network none (only lo, no route out) and run this suite INSIDE it against loopback, since --network none makes a published port inert and a host-side run cannot connect at all. Verified at W8: identical results inside the isolated container and outside it, so the suite contributes evidence rather than merely claiming to.
 - **R2.7** — Runtime assets and dependencies are included in the image.
-  - Image contents. Checked out of band by inspecting the built image.
+  - Image contents, not HTTP behaviour. 'Inspecting the image' was too vague to run, so: `docker run --rm IMAGE sh -c 'cat /app/package.json'` shows dependencies {} and devDependencies {}; `docker run --rm IMAGE sh -c 'ls /app'` gives exactly `package.json src`; no node_modules exists outside node's own install; and every require() under /app/src resolves to a relative path or one of three builtins (crypto, http, util). The decisive evidence is shared with R2.5: a container with no network interfaces serves the whole suite, and nothing missing from the image could have been fetched.
 - **R3.1** — Listen on 0.0.0.0 using the PORT environment variable, default 8080.
   - The bind address and the PORT default are properties of how the process starts. The suite proves the service answers on the URL it was given; 0.0.0.0 and the 8080 default are checked out of band.
 - **R4.4** — Users identify recipients by handle; directory and user-search endpoints are out of scope.
@@ -328,7 +328,7 @@ building and starting the image.
 - **R8.36** — The relative order of two payments created within the same second is unspecified, and stable pagination during concurrent writes is not required for GET /activity.
   - An explicit relaxation, not a requirement. The suite relies on it: it never asserts an order between two items created in the same second, and never asserts pagination stability during concurrent writes.
 - **R10.17** — State need not survive an abrupt container restart.
-  - An explicit relaxation. The suite never restarts the container and never requires state to survive one.
+  - An explicit relaxation -- nothing can fail it, so the only risk is the suite demanding MORE than the specification allows. Verified rather than asserted: the suite imports only node:fs, node:http, node:https, node:path and node:url, so it has no mechanism to restart anything, and no check mentions state surviving a restart. Observed behaviour at W2b for the record: a restart clears all state and the service returns to health in ~2 s, which the specification permits.
 - **R10.18** — Exports may contain credentials and session tokens; handle them as private test artifacts.
   - An instruction to whoever holds an export, not a service behaviour. Honoured rather than tested: the suite never writes an export to disk and never prints one.
 - **R11.4** — The body is {"transfers":[{from_handle,to_handle,amount}, ..]}.
