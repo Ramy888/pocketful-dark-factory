@@ -233,7 +233,7 @@ export const DELIBERATE_GAPS = {
   'R2.2': 'States that a file is optional. Nothing to check.',
   'R2.3': 'A constraint on the submission form, not on HTTP behaviour.',
   'R2.4': 'How the container is started (-e PORT and a port mapping). The suite is pointed at whatever BASE_URL the launcher produced, so it exercises the result but cannot itself vary PORT. Checked out of band by starting the image twice.',
-  'R2.5': 'Run-time network isolation. Checked out of band by starting the container with --network none; the suite is designed to pass in exactly that configuration, which is how it contributes evidence.',
+  'R2.5': 'Run-time network isolation. Checked out of band: start the container with --network none (only lo, no route out) and run this suite INSIDE it against loopback, since --network none makes a published port inert and a host-side run cannot connect at all. Verified at W8: identical results inside the isolated container and outside it, so the suite contributes evidence rather than merely claiming to.',
   'R2.7': 'Image contents. Checked out of band by inspecting the built image.',
   'R3.1': 'The bind address and the PORT default are properties of how the process starts. The suite proves the service answers on the URL it was given; 0.0.0.0 and the 8080 default are checked out of band.',
   'R4.4': 'A statement of scope: there is no directory endpoint to test. Recipient identification by handle is covered throughout.',

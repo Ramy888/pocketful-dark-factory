@@ -29,8 +29,15 @@ node main.mjs --coverage > COVERAGE.md
   only to exercise R10.6 — that an export carries no dependency on its source process, port
   or address. Without it, that reference is reported as exercised only within one container.
 - Requirements: **Node 18 or newer, nothing else.** No packages, no install step.
-- The suite talks HTTP and nothing else, so it runs unchanged against a container started
-  with `--network none`.
+- The suite talks HTTP and nothing else, so it runs unchanged against a container with no
+  network interfaces at all — but **run it inside the container**. `--network none` makes a
+  published port inert, so a host-side run cannot connect:
+
+      docker run -d --name iso --network none -e PORT=8080 \
+        -v "$(pwd)/stage-1/acceptance:/suite:ro" <image>
+      docker exec -e BASE_URL=http://127.0.0.1:8080 iso node /suite/main.mjs
+
+  Verified at W8: `168 / 44 / 5` inside the isolated container, identical to the host-side run.
 - Exit code is `0` only if every blocking check passed. Advisory failures never change it.
 - Full run: a few minutes. `--fast` drops the eleven slow concurrency checks.
 
