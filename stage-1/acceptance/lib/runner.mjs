@@ -64,6 +64,15 @@ class Ctx {
   constructor(testCase) {
     this.testCase = testCase;
     this.failures = [];
+    // D47, generalised. Two vacuity mechanisms were found by hand: a bare
+    // `if (x.status !== 201) return;` that records nothing, and assertions
+    // reachable only inside a loop over a collection that can be empty. Both
+    // end the same way -- a check reports pass having asserted nothing, and
+    // stays green for the rest of the project because nobody re-reads a
+    // passing check. Counting assertions catches every such mechanism,
+    // including ones nobody has thought of, instead of auditing for patterns
+    // one at a time.
+    this.assertions = 0;
     this.trail = [];
     this.seenGlobal = new Set();
     this.aborted = null;
@@ -75,6 +84,7 @@ class Ctx {
   }
 
   record(failure) {
+    this.recorded = true;
     const res = failure.res;
     this.failures.push({
       ref: failure.ref,
@@ -244,6 +254,7 @@ class Ctx {
   // ---- assertions -------------------------------------------------------
 
   ok(cond, failure) {
+    this.assertions += 1;
     if (!cond) this.record(failure);
     return !!cond;
   }
@@ -368,6 +379,18 @@ export async function runAll({ only = null, verbose = false, includeSlow = true 
           expected: 'the check to run to completion',
           actual: `${err && err.stack ? err.stack.split('\n').slice(0, 4).join(' | ') : err}`,
           severity: tc.severity,
+        });
+      }
+      // A check that asserted nothing has not passed; it has not run. Always
+      // blocking, whatever the check's own severity: an advisory check that
+      // silently stops asserting is exactly as misleading as a blocking one.
+      if (ctx.assertions === 0 && !ctx.failures.length) {
+        ctx.record({
+          ref: tc.refs[0], what: 'this check recorded no assertion at all',
+          expected: 'at least one assertion to run',
+          actual: 'the check completed without asserting anything -- an early return, '
+                + 'an empty loop, or a guard that swallowed a setup failure (D47)',
+          severity: 'blocking',
         });
       }
       const ms = Date.now() - started;
