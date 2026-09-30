@@ -459,6 +459,52 @@ suite('06 requests', () => {
     });
   });
 
+  // D51 drew the line I had not: the *particular* order of two same-second items is
+  // unspecified on /activity (R8.36) and settled only by a decision on /requests (D9, and
+  // advisory here because a decision is not the specification) -- but **determinism under a
+  // static state** is spec-level on both, because §8 defines limit/offset/has_more as a
+  // paging contract and a contract whose pages do not compose into the list is broken
+  // whatever the tie order. The suite checked page sizes and has_more and never that the
+  // pages actually compose; a feed returning one item on two pages, or skipping one, passed.
+  // R8.36's exemption is for concurrent writes, so every write happens before any read here.
+  test('paging a static request list composes into the unpaged list exactly once', ['R8.25', 'R8.26'], async (t) => {
+    const c = await loginAll(t);
+    for (let i = 0; i < 11; i += 1) {
+      const r = await create(t, c, 'ada', 'bob', 300 + i, `compose ${i}`);
+      if (!t.status(r, 201, { ref: 'R8.25', what: `setup: request ${i} must exist (D47)` })) return;
+    }
+    const q = { direction: 'outgoing', status: 'pending' };
+    const all = await requests(t, c.tokens.ada, { ...q, limit: 200 });
+    if (!t.status(all, 200, { ref: 'R8.25', what: 'the unpaged list' })) return;
+    const whole = (all.json.requests || []).map((r) => r.request_id);
+
+    const again = await requests(t, c.tokens.ada, { ...q, limit: 200 });
+    if (!t.status(again, 200, { ref: 'R8.25', what: 'the unpaged list, read a second time' })) return;
+    t.deep((again.json.requests || []).map((r) => r.request_id), whole, {
+      ref: 'R8.25', what: 'two unpaged reads with no write between them', res: again,
+      expected: 'the identical order both times',
+    });
+
+    const LIMIT = 4;
+    const walked = [];
+    for (let offset = 0; offset < whole.length + LIMIT; offset += LIMIT) {
+      const page = await requests(t, c.tokens.ada, { ...q, limit: LIMIT, offset });
+      if (!t.status(page, 200, { ref: 'R8.25', what: `limit=${LIMIT}&offset=${offset}` })) return;
+      const ids = (page.json.requests || []).map((r) => r.request_id);
+      walked.push(...ids);
+      const expectMore = offset + LIMIT < whole.length;
+      t.eq(page.json.has_more, expectMore, {
+        ref: 'R8.26', what: `has_more at offset=${offset} of ${whole.length}`, res: page,
+      });
+      if (offset >= whole.length) break;
+    }
+    t.deep(walked, whole, {
+      ref: 'R8.25', what: `walking the list ${LIMIT} at a time`, res: all,
+      expected: 'every item exactly once, in the unpaged order',
+      actual: `${walked.length} items, ${new Set(walked).size} distinct, from an unpaged list of ${whole.length}`,
+    });
+  });
+
   test('requests created in the same second are still ordered newest first', ['D9'], async (t) => {
     const c = await loginAll(t);
     const made = [];
