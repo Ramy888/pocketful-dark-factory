@@ -397,6 +397,94 @@ suite('05 idempotency', () => {
     }
   }, { slow: true });
 
+  // W5 criterion 11, and the reason it exists: at W4 the idempotency export branch was
+  // reachable only through a test harness, because no write path was registered in the
+  // delivered image. A branch proven by a harness the implementer composed and a branch
+  // proven through the shipped service are different claims -- the first cannot catch a
+  // record that never reaches the real store, or a route table that never wires the gate.
+  // W5 registers the first real write path, so this is the commit where the claim can be
+  // made through the image. Single container, read half only; W9 owns the round trip.
+  test('a completed idempotent request reaches GET /_test/export through the delivered image', ['R10.11', 'R7.6'], async (t) => {
+    const c = await loginAll(t);
+    const k = key('export-record');
+    const made = await api(t, {
+      method: 'POST', path: '/payments', token: c.tokens.ada, idemKey: k,
+      body: { to_handle: 'bob', amount: 1234, note: 'reaches the export' },
+    });
+    if (!t.status(made, 201, { ref: 'R7.6', what: 'POST /payments establishing a record' })) return;
+
+    const dump = await api(t, { path: '/_test/export' });
+    if (!t.status(dump, 200, { ref: 'R10.2', what: 'GET /_test/export' })) return;
+    const records = ((dump.json || {}).state || {}).idempotency;
+    if (!t.ok(Array.isArray(records), {
+      ref: 'R10.11', what: 'the exported state\'s idempotency records', res: dump,
+      expected: 'an array of completed idempotent request records',
+      actual: `${JSON.stringify(records)} -- nothing a W9 import could restore retries from`,
+    })) return;
+
+    const mine = records.filter((r) => r && r.key === k);
+    if (!t.eq(mine.length, 1, {
+      ref: 'R10.11', what: `exported records carrying the key just used`, res: dump,
+      expected: 'exactly one record for that key',
+      actual: `${mine.length} of ${records.length} exported records match`,
+    })) return;
+
+    // R10.11 names the body and the original response specifically, because R10.13 and
+    // R10.14 depend on both: a retry after import must return what the first call returned.
+    const rec = mine[0];
+    t.ok(rec.body && rec.body.amount === 1234 && rec.body.to_handle === 'bob' && rec.body.note === 'reaches the export', {
+      ref: 'R10.11', what: 'the exported record\'s request body', res: dump,
+      expected: 'the body as sent: amount 1234, to_handle "bob", the note verbatim',
+      actual: JSON.stringify(rec.body),
+    });
+    t.ok(rec.response && deepEqual(rec.response, made.json), {
+      ref: 'R10.11', what: 'the exported record\'s original response', res: dump,
+      expected: 'the 201 body returned by the first call, verbatim',
+      actual: JSON.stringify(rec.response),
+    });
+    t.eq(rec.status, 201, { ref: 'R10.11', what: 'the exported record\'s original status', res: dump });
+
+    // The record must describe the request it belongs to, or a replay cannot be matched
+    // to it after import: R7.3 scopes a key per user and R7.4 per path.
+    const me = await api(t, { path: '/me', token: c.tokens.ada });
+    t.ok(rec.user_id === ((me.json || {}).user_id) && rec.method === 'POST' && rec.path === '/payments', {
+      ref: 'R10.11', what: 'the exported record\'s (user, method, path) scope', res: dump,
+      expected: `user ${(me.json || {}).user_id}, POST, /payments`,
+      actual: `user ${rec.user_id}, ${rec.method}, ${rec.path}`,
+    });
+  });
+
+  // The companion: a key freed by a 4xx must leave nothing behind for an import to restore,
+  // or R10.13's "failed request keys remain reusable" breaks on the destination.
+  test('a key left free by a 4xx contributes no record to the export', ['R10.13', 'R7.9'], async (t) => {
+    const c = await loginAll(t);
+    const k = key('export-freed');
+    // Establish the write path exists first. Without this the check passes vacuously
+    // before W5: the payment below 4xxs because the route is absent rather than because
+    // the handle is unknown, and an export with no records then looks like a pass.
+    const control = await api(t, {
+      method: 'POST', path: '/payments', token: c.tokens.ada, idemKey: key('export-freed-control'),
+      body: { to_handle: 'bob', amount: 1 },
+    });
+    if (!t.status(control, 201, { ref: 'R7.9', what: 'POST /payments (control: the write path must exist)' })) return;
+
+    const failed = await api(t, {
+      method: 'POST', path: '/payments', token: c.tokens.ada, idemKey: k,
+      body: { to_handle: 'nobody-has-this-handle', amount: 10 },
+    });
+    t.ok(failed.status === 404, {
+      ref: 'R7.9', what: 'a first use that fails on an unknown handle',
+      expected: 'HTTP 404 not_found', actual: `HTTP ${failed.status}`, res: failed,
+    });
+    const dump = await api(t, { path: '/_test/export' });
+    if (!t.status(dump, 200, { ref: 'R10.2', what: 'GET /_test/export' })) return;
+    const records = (((dump.json || {}).state || {}).idempotency) || [];
+    t.eq(records.filter((r) => r && r.key === k).length, 0, {
+      ref: 'R10.13', what: 'exported records carrying a key freed by a 4xx', res: dump,
+      expected: 'none -- the key is still free, so there is nothing to preserve',
+    });
+  });
+
   test('concurrent requests with different keys each take effect once', ['R7.11', 'R1.7'], async (t) => {
     const c = await loginAll(t);
     const N = 8;
