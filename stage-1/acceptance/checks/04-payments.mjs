@@ -395,12 +395,32 @@ suite('04 payments', () => {
       ],
     };
     const res = await resetWith(t, fixture, null);
-    if (res.status === 422) return; // the fixture was refused; nothing further to prove
-    if (!t.status(res, 204, { ref: 'R3.3', what: 'reset with a recipient at 2^53' })) return;
+
+    // Refusing the fixture is a complete answer, but it has to be *asserted*, not
+    // returned on. Written first as a bare `if (res.status === 422) return;`, which
+    // recorded nothing and reported a pass the moment the fix made this the live
+    // path -- the same D47 shape this suite was just audited for. Caught by the
+    // runner's zero-assertion guard within minutes of that guard landing.
+    if (res.status !== 204) {
+      t.err(res, 422, 'validation_failed', {
+        ref: 'R4.17', what: 'a fixture whose seeded balances sum above 2^53',
+        expected: '422 validation_failed, which bounds every later balance by construction',
+      });
+      return;
+    }
+
     const src = await login(t, 'src@example.com');
     if (!src) return;
     const r = await pay(t, src.token, { to_handle: 'dst', amount: 1000000000 });
-    if (r.status !== 201) return; // refusing the payment is also a complete answer
+    // Refusing the payment is also a complete answer -- but again, assert it.
+    if (r.status !== 201) {
+      t.ok(r.status >= 400 && r.status < 500, {
+        ref: 'R4.17', what: 'a payment that would push the recipient past 2^53', res: r,
+        expected: 'either a 201 that keeps the balance in range, or a 4xx refusal',
+        actual: `HTTP ${r.status}`,
+      });
+      return;
+    }
     const dump = await api(t, { path: '/_test/export' });
     if (!t.status(dump, 200, { ref: 'R10.2', what: 'GET /_test/export' })) return;
     const dst = (((dump.json || {}).state || {}).users || []).find((u) => u.handle === 'dst');
