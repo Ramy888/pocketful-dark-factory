@@ -45,6 +45,25 @@ function serializeState(state) {
       sequence: r.sequence,
     })),
     settlement_operator_ids: [...state.operatorIds],
+    // D30: splits and settlements are exported now, ahead of W8/W10 giving
+    // them real content, so the export-coverage guard never has to treat
+    // "not populated yet" as an excuse. Both are empty until then; whichever
+    // item first writes into them should also revisit this mapping once
+    // their internal record shape exists, the same way payments/requests
+    // above map internal fields to external ones.
+    splits: [...state.splits.values()],
+    settlements: [...state.settlements.values()],
+    // R10.11/R11.19: every completed idempotent request's original body and
+    // response, so import restores retries exactly (R10.13/R10.14).
+    idempotency: [...state.idempotency.values()].map((r) => ({
+      user_id: r.userId,
+      key: r.key,
+      method: r.method,
+      path: r.path,
+      body: JSON.parse(r.bodyCanonical),
+      status: r.status,
+      response: r.responseBody,
+    })),
     sequence_counter: state.sequenceCounter,
   };
 }

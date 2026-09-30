@@ -46,6 +46,10 @@ function createApp(router) {
 
     req.query = new URL(req.url, 'http://internal').searchParams;
     req.jsonBody = body;
+    // The idempotency gate (lib/idempotency.js) scopes a record by the
+    // concrete request path, not the route pattern -- two different {id}
+    // paths under one collection are different requests (R7.4).
+    req.pathname = pathname;
 
     try {
       const { handler, params } = router.resolve(req.method, pathname);
