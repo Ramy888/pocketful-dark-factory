@@ -297,7 +297,10 @@ suite('06 requests', () => {
     const c = await loginAll(t);
     const a = await create(t, c, 'ada', 'bob', 100);
     const b = await create(t, c, 'ada', 'bob', 200);
-    if (a.status !== 201 || b.status !== 201) return;
+    // D47: an absent POST /requests would leave both lists empty and every
+    // "only the right requests are listed" assertion vacuously true.
+    if (!t.status(a, 201, { ref: 'R8.13', what: 'setup: the first request' })) return;
+    if (!t.status(b, 201, { ref: 'R8.13', what: 'setup: the second request' })) return;
     const d = await api(t, { method: 'POST', path: `/requests/${a.json.request_id}/decline`, token: c.tokens.bob, idemKey: key('extra'), body: {} });
     t.status(d, 200, { ref: 'R3.4c', what: 'decline with an unnecessary Idempotency-Key' });
     const x = await api(t, { method: 'POST', path: `/requests/${b.json.request_id}/cancel`, token: c.tokens.ada, idemKey: key('extra'), body: {} });
@@ -328,7 +331,7 @@ suite('06 requests', () => {
 
     // A third party sees nothing of a request between two others.
     const rq = await create(t, c, 'ada', 'bob', 777);
-    if (rq.status !== 201) return;
+    if (!t.status(rq, 201, { ref: 'R8.13', what: 'setup: POST /requests must succeed before its visibility means anything (D47)' })) return;
     const outsider = await requests(t, c.tokens.eve, { limit: 200 });
     t.ok(!((outsider.json || {}).requests || []).some((r) => r.request_id === rq.json.request_id), {
       ref: 'R8.22', what: "a request between ada and bob in eve's list", res: outsider,
@@ -340,7 +343,7 @@ suite('06 requests', () => {
   test('requests never appear in the activity feed', ['R4.14'], async (t) => {
     const c = await loginAll(t);
     const rq = await create(t, c, 'ada', 'bob', 4242, 'never in a feed');
-    if (rq.status !== 201) return;
+    if (!t.status(rq, 201, { ref: 'R8.13', what: 'setup: the request must exist, or "absent from the feed" is vacuously true (D47)' })) return;
     for (const who of ['ada', 'bob', 'cy']) {
       const feed = await activity(t, c.tokens[who], { limit: 200 });
       if (!t.status(feed, 200, { ref: 'R8.35', what: `GET /activity as ${who}` })) continue;
@@ -361,13 +364,17 @@ suite('06 requests', () => {
     const out1 = await create(t, c, 'ada', 'bob', 11);
     const out2 = await create(t, c, 'ada', 'cy', 12);
     const in1 = await create(t, c, 'eve', 'ada', 13);
-    if (out1.status !== 201 || out2.status !== 201 || in1.status !== 201) return;
+    // D47: without these, an absent POST /requests leaves every filter list empty and
+    // every "nothing wrong is listed" assertion vacuously true.
+    if (!t.status(out1, 201, { ref: 'R8.13', what: 'setup: outgoing request 1' })) return;
+    if (!t.status(out2, 201, { ref: 'R8.13', what: 'setup: outgoing request 2' })) return;
+    if (!t.status(in1, 201, { ref: 'R8.13', what: 'setup: incoming request 1' })) return;
 
     // Move one of each into a terminal state.
     await api(t, { method: 'POST', path: `/requests/${out2.json.request_id}/cancel`, token: c.tokens.ada, body: {} });
     await api(t, { method: 'POST', path: `/requests/${in1.json.request_id}/decline`, token: c.tokens.ada, body: {} });
     const payable = await create(t, c, 'eve', 'ada', 14);
-    if (payable.status !== 201) return;
+    if (!t.status(payable, 201, { ref: 'R8.13', what: 'setup: a payable request must exist before the filters are asked about it (D47)' })) return;
     await api(t, { method: 'POST', path: `/requests/${payable.json.request_id}/pay`, token: c.tokens.ada, idemKey: key('flt'), body: {} });
 
     const all = await requests(t, c.tokens.ada, { limit: 200 });
@@ -441,7 +448,7 @@ suite('06 requests', () => {
     const c = await loginAll(t);
     for (let i = 0; i < 5; i++) {
       const r = await create(t, c, 'ada', 'bob', 100 + i, `order ${i}`);
-      if (r.status !== 201) return;
+      if (!t.status(r, 201, { ref: 'R8.22', what: `setup: request ${i} must exist, or an empty list orders trivially (D47)` })) return;
     }
     const res = await requests(t, c.tokens.ada, { direction: 'outgoing', limit: 200 });
     if (!t.status(res, 200, { ref: 'R8.22', what: 'GET /requests?direction=outgoing' })) return;
@@ -457,7 +464,7 @@ suite('06 requests', () => {
     const made = [];
     for (let i = 0; i < 5; i++) {
       const r = await create(t, c, 'ada', 'bob', 100 + i, `seq ${i}`);
-      if (r.status !== 201) return;
+      if (!t.status(r, 201, { ref: 'R8.22', what: `setup: request ${i} must exist before ordering is checked (D47)` })) return;
       made.push(r.json.request_id);
     }
     const res = await requests(t, c.tokens.ada, { direction: 'outgoing', status: 'pending', limit: 200 });
@@ -495,7 +502,7 @@ suite('06 requests', () => {
     const c = await loginAll(t);
     for (let i = 0; i < 6; i++) {
       const r = await create(t, c, 'ada', 'bob', 200 + i, `page ${i}`);
-      if (r.status !== 201) return;
+      if (!t.status(r, 201, { ref: 'R8.25', what: `setup: request ${i} must exist, or paging an empty list proves nothing (D47)` })) return;
     }
     const all = await requests(t, c.tokens.ada, { direction: 'outgoing', status: 'pending', limit: 200 });
     if (!t.status(all, 200, { ref: 'R8.25', what: 'the unpaged list' })) return;
@@ -552,7 +559,11 @@ suite('06 requests', () => {
     const a = await create(t, c, 'ada', 'bob', 500);
     const b = await create(t, c, 'bob', 'ada', 600);
     const d = await create(t, c, 'eve', 'ada', 700);
-    if (a.status !== 201 || b.status !== 201 || d.status !== 201) return;
+    // D47: with no POST /requests the lifecycle below never happens, and "the total is
+    // unchanged" is then true of a ledger nothing touched.
+    if (!t.status(a, 201, { ref: 'R8.13', what: 'setup: the request ada->bob' })) return;
+    if (!t.status(b, 201, { ref: 'R8.13', what: 'setup: the request bob->ada' })) return;
+    if (!t.status(d, 201, { ref: 'R8.13', what: 'setup: the request eve->ada' })) return;
     t.eq(await sumBalances(t, c.tokens), total, { ref: 'R1.7', what: 'total after three requests' });
     await api(t, { method: 'POST', path: `/requests/${a.json.request_id}/pay`, token: c.tokens.bob, idemKey: key('lc'), body: {} });
     t.eq(await sumBalances(t, c.tokens), total, { ref: 'R1.7', what: 'total after a payment' });
