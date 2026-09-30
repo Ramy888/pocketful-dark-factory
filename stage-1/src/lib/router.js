@@ -30,9 +30,20 @@ function createRouter() {
       const match = route.regex.exec(pathname);
       if (!match) continue;
       const params = {};
-      route.paramNames.forEach((name, i) => {
-        params[name] = decodeURIComponent(match[i + 1]);
-      });
+      try {
+        route.paramNames.forEach((name, i) => {
+          params[name] = decodeURIComponent(match[i + 1]);
+        });
+      } catch {
+        // C2: an undecodable path segment (e.g. /requests/%ZZ/pay) cannot
+        // identify any resource. Falling through to the next route (and
+        // ultimately this function's own 404) keeps the error inside §5's
+        // malformed_request/not_found split -- malformed_request is
+        // reserved for a body, and a decode failure here is neither a body
+        // problem nor a route the generic catch-all should have to guess
+        // about.
+        continue;
+      }
       return { handler: route.handler, params };
     }
     throw new AppError(404, 'not_found', 'no such resource');
