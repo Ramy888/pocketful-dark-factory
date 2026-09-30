@@ -78,7 +78,10 @@ console.log('\n== amount boundaries and R4.2 numeric forms ==');
   // first wrote this table the other way round and the service was right, not the table.
   // 1000000000 is a *valid* amount (R4.17's ceiling), so against ada's 10000 balance it is
   // 409 insufficient_funds, not 422: the range check passes and the funds check decides.
-  const cases=[[1,201],[1000000000,409],[0,422],[-1,422],[1.5,422],['100',422],[true,422],[null,422],[[1],422],[{},422],[NaN,400],[1e3,201]];
+  // NaN is deliberately absent: JSON.stringify({amount: NaN}) emits {"amount":null}, so a
+  // "NaN" row would silently be a second null row testing nothing new. JSON has no NaN, so
+  // the only way to send one is a raw body, which the malformed-input probe already covers.
+  const cases=[[1,201],[1000000000,409],[0,422],[-1,422],[1.5,422],['100',422],[true,422],[null,422],[[1],422],[{},422],[1e3,201]];
   const bad=[];
   for(const [v,want] of cases){ const r=await pay(T.ada,{to_handle:'bob',amount:v},K());
     const got=r.status; if(got!==want) bad.push(`amount ${JSON.stringify(v)} -> ${got} (wanted ${want})`); }
