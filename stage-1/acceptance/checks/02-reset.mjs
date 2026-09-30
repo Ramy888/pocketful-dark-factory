@@ -90,6 +90,33 @@ suite('02 reset and fixture', () => {
     }
   });
 
+  // Promoted from a probe under D56: this was covered only by my C6-fix probe, which
+  // passed, so nothing announced that the suite could not see it. The seeded-sum cap
+  // exists because a total above 2^53 lets a credit round away while its debit lands
+  // exactly (R1.7, R4.17). The cap therefore must not be computed with the arithmetic it
+  // guards against: these two balances sum to 2^53 + 1 exactly, but to *exactly* 2^53 as
+  // IEEE-754 doubles, so a float-summed cap accepts the very fixture that reintroduces the
+  // defect. The existing C6 checks seed 2^53 twice, a total a float sum also rejects, so
+  // they do not reach this. Needs only reset and export -- no forward dependency (D54).
+  test('the seeded-balance cap is not computed with the arithmetic it guards against', ['R4.17', 'R1.7'], async (t) => {
+    const TWO53 = 9007199254740992;
+    const users = [
+      { id: 'u_hi', email: 'hi@example.com', password: PW, display_name: 'Hi', handle: 'hi', balance: TWO53 - 1 },
+      { id: 'u_lo', email: 'lo@example.com', password: PW, display_name: 'Lo', handle: 'lo', balance: 2 },
+    ];
+    // (2^53 - 1) + 2 is 2^53 + 1 in exact arithmetic and 2^53 in doubles.
+    t.ok((TWO53 - 1) + 2 === TWO53, {
+      ref: 'R4.17', what: 'the premise of this check, asserted so it cannot rot',
+      expected: 'the two balances to sum to exactly 2^53 in double arithmetic',
+      actual: String((TWO53 - 1) + 2),
+    });
+    const res = await resetWith(t, { currency: 'EUR', minor_units: 2, users, payments: [], requests: [] }, null);
+    t.err(res, 422, 'validation_failed', {
+      ref: 'R4.17', what: 'a fixture whose exact seeded sum exceeds 2^53 but whose float sum does not',
+      expected: '422 validation_failed -- the cap summed exactly, not as doubles',
+    });
+  });
+
   test('the sum of wallet balances equals the seeded total', ['R1.7'], async (t) => {
     const { tokens } = await loginAll(t, 'eur');
     const sum = await sumBalances(t, tokens);
