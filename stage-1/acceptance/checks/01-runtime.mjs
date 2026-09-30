@@ -145,6 +145,45 @@ suite('01 runtime contract', () => {
        + 'malformed_request is also defensible.',
   });
 
+  // Promoted from a probe under D56. R5.16 forbids 5xx flatly and R5.1 requires the error
+  // envelope on every 4xx; the suite checked an unparseable body and a non-object body and
+  // stopped there, while only my W5 error probe sent anything genuinely hostile. Aimed at
+  // POST /_test/reset because it exists from W2 onward, so this has no forward dependency
+  // (D54); 04 carries the same block against POST /payments.
+  function truncateBody(text) {
+    return typeof text === 'string' && text.length > 200 ? `${text.slice(0, 200)}...` : String(text);
+  }
+
+  test('a hostile request body is answered, never with a 5xx', ['R5.16', 'R5.1'], async (t) => {
+    const hostile = [
+      ['unparseable', '{not json'],
+      ['a bare number', '7'],
+      ['an array', '[1,2,3]'],
+      ['400 levels of nesting', '{"a":' + '['.repeat(400) + ']'.repeat(400) + '}'],
+      ['a 500 KB string field', JSON.stringify({ junk: 'y'.repeat(500000) })],
+      ['1e309, beyond double range', '{"amount":1e309}'],
+      ['negative zero', '{"amount":-0}'],
+      ['duplicate JSON keys', '{"amount":1,"amount":2}'],
+      ['a lone surrogate', '{"note":"\\ud800"}'],
+      ['a NUL inside a string', '{"note":"a\\u0000b"}'],
+    ];
+    for (const [label, raw] of hostile) {
+      const res = await api(t, { method: 'POST', path: '/_test/reset', rawBody: raw });
+      t.ok(res.status < 500, {
+        ref: 'R5.16', what: `POST /_test/reset with ${label}`, res,
+        expected: 'any 2xx or 4xx, never a 5xx', actual: `HTTP ${res.status}`,
+      });
+      if (res.status >= 400) {
+        t.ok(res.json && res.json.error && typeof res.json.error.code === 'string' && typeof res.json.error.message === 'string', {
+          ref: 'R5.1', what: `the error envelope for ${label}`, res,
+          expected: '{"error":{"code","message"}}', actual: truncateBody(res.text),
+        });
+      }
+    }
+    const health = await api(t, { path: '/health' });
+    t.status(health, 200, { ref: 'R5.16', what: 'GET /health after the hostile bodies' });
+  });
+
   test('timestamps are RFC 3339 with an explicit offset', ['R3.4b'], async (t) => {
     // The global invariant enforces the format on every created_at/committed_at the
     // suite ever sees; this check guarantees at least one such value is produced.
