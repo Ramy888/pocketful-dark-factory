@@ -188,8 +188,16 @@ async function main() {
 
   // ---- criterion 7: unknown to_handle ----
   {
+    // D47: an absent /payments route also answers 404 not_found, on the
+    // same status and the same code -- a check for this criterion that
+    // does not first prove the route exists would pass vacuously before
+    // the route was ever registered. The control payment below must
+    // succeed (201) before the unknown-handle case is asked to mean
+    // anything.
     await reset(server, baseUsers);
     const tokA = await login(server, 'ada@example.com');
+    const control = await pay(server, tokA, { to_handle: 'cy', amount: 1 }, key());
+    assert(control.status === 201, `criterion 7 control: a real handle succeeds -> 201, proving the route exists (got ${control.status})`);
     const r = await pay(server, tokA, { to_handle: 'ghost', amount: 1 }, key());
     assert(r.status === 404 && r.json.error.code === 'not_found', `criterion 7: unknown to_handle -> 404 not_found (got ${r.status} ${r.json && r.json.error && r.json.error.code})`);
   }
