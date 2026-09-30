@@ -114,4 +114,4 @@ function registerPaymentsRoutes(router, store) {
   });
 }
 
-module.exports = { registerPaymentsRoutes };
+module.exports = { registerPaymentsRoutes, serializePayment };

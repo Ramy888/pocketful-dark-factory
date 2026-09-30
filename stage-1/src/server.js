@@ -11,6 +11,7 @@ const { registerTestExportRoutes } = require('./routes/testExport');
 const { registerAuthRoutes } = require('./routes/auth');
 const { registerMeRoutes } = require('./routes/me');
 const { registerPaymentsRoutes } = require('./routes/payments');
+const { registerActivityRoutes } = require('./routes/activity');
 const { Store } = require('./store');
 
 function buildRouter(store) {
@@ -21,6 +22,7 @@ function buildRouter(store) {
   registerAuthRoutes(router, store);
   registerMeRoutes(router, store);
   registerPaymentsRoutes(router, store);
+  registerActivityRoutes(router, store);
   return router;
 }
 
