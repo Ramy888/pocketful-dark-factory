@@ -62,9 +62,17 @@ function serializeState(state) {
       created_at: toIso(s.createdAt),
       sequence: s.sequence,
     })),
-    // settlements is still empty ahead of W10; the same "not populated
-    // yet" reasoning D30 already accepted for splits applies here too.
-    settlements: [...state.settlements.values()],
+    // W10: settlements' first real content, mapped like splits above --
+    // payments referenced by id rather than re-embedded, same reason (they
+    // already have their own top-level entry, and each member payment
+    // already carries settlement_id, so nothing here duplicates that link).
+    settlements: [...state.settlements.values()].map((s) => ({
+      id: s.id,
+      operator_id: s.operatorId,
+      payment_ids: s.paymentIds,
+      committed_at: toIso(s.committedAt),
+      sequence: s.sequence,
+    })),
     // R10.11/R11.19: every completed idempotent request's original body and
     // response, so import restores retries exactly (R10.13/R10.14).
     idempotency: [...state.idempotency.values()].map((r) => ({
@@ -103,6 +111,7 @@ function deserializeState(raw) {
   if (!Array.isArray(raw.payments)) throw new Error('state.payments must be an array');
   if (!Array.isArray(raw.requests)) throw new Error('state.requests must be an array');
   if (!Array.isArray(raw.splits)) throw new Error('state.splits must be an array');
+  if (!Array.isArray(raw.settlements)) throw new Error('state.settlements must be an array');
   if (!Array.isArray(raw.settlement_operator_ids)) throw new Error('state.settlement_operator_ids must be an array');
   if (!Array.isArray(raw.idempotency)) throw new Error('state.idempotency must be an array');
 
@@ -179,10 +188,19 @@ function deserializeState(raw) {
     });
   }
 
-  // W10 gives settlements real content; nothing produces any yet (R11.19
-  // is carried to W10, D61b), so this stays an empty reconstruction, same
-  // reasoning D30 already accepted for the export side.
   const settlements = new Map();
+  for (const s of raw.settlements) {
+    if (!isPlainObject(s) || typeof s.id !== 'string' || !Array.isArray(s.payment_ids)) {
+      throw new Error('invalid settlement record');
+    }
+    settlements.set(s.id, {
+      id: s.id,
+      operatorId: s.operator_id,
+      paymentIds: s.payment_ids,
+      committedAt: new Date(s.committed_at),
+      sequence: s.sequence,
+    });
+  }
 
   const idempotency = new Map();
   for (const rec of raw.idempotency) {

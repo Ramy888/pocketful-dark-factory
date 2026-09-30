@@ -14,6 +14,7 @@ const { registerPaymentsRoutes } = require('./routes/payments');
 const { registerActivityRoutes } = require('./routes/activity');
 const { registerRequestsRoutes } = require('./routes/requests');
 const { registerSplitsRoutes } = require('./routes/splits');
+const { registerSettlementsRoutes } = require('./routes/settlements');
 const { Store } = require('./store');
 
 function buildRouter(store) {
@@ -27,6 +28,7 @@ function buildRouter(store) {
   registerActivityRoutes(router, store);
   registerRequestsRoutes(router, store);
   registerSplitsRoutes(router, store);
+  registerSettlementsRoutes(router, store);
   return router;
 }
 

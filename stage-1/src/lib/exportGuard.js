@@ -201,7 +201,7 @@ function fieldCovered(key, exportedKeys, collectionRenames) {
 // Returns { ok, missing }. `missing` names every `collection.field` whose
 // live value could not be found, under any allowed name, in its exported
 // counterpart. An empty collection contributes nothing to check -- there
-// is no live record to demand coverage of (settlements, pre-W10).
+// is no live record to demand coverage of.
 function checkRecordFieldCoverage(state, serializeState, renames = RECORD_RENAMES) {
   const exported = serializeState(state);
   const missing = [];
@@ -222,6 +222,7 @@ function checkRecordFieldCoverage(state, serializeState, renames = RECORD_RENAME
   checkByOwnId('payments', state.payments);
   checkByOwnId('requests', state.requests);
   checkByOwnId('splits', state.splits);
+  checkByOwnId('settlements', state.settlements);
 
   {
     const collectionRenames = renames.idempotency || {};
