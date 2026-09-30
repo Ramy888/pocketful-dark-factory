@@ -45,13 +45,23 @@ function serializeState(state) {
       sequence: r.sequence,
     })),
     settlement_operator_ids: [...state.operatorIds],
-    // D30: splits and settlements are exported now, ahead of W8/W10 giving
-    // them real content, so the export-coverage guard never has to treat
-    // "not populated yet" as an excuse. Both are empty until then; whichever
-    // item first writes into them should also revisit this mapping once
-    // their internal record shape exists, the same way payments/requests
-    // above map internal fields to external ones.
-    splits: [...state.splits.values()],
+    // D30: splits now has real content (W8); mapped like payments/requests
+    // above rather than passed through raw. Requests are referenced by id,
+    // not embedded -- they already have their own top-level export entry,
+    // and re-embedding a duplicate copy here (frozen at split-creation
+    // time) would drift from the live status a later payment can produce.
+    splits: [...state.splits.values()].map((s) => ({
+      id: s.id,
+      caller_id: s.callerId,
+      amount: s.amount,
+      note: s.note,
+      shares: s.shares,
+      request_ids: s.requestIds,
+      created_at: toIso(s.createdAt),
+      sequence: s.sequence,
+    })),
+    // settlements is still empty ahead of W10; the same "not populated
+    // yet" reasoning D30 already accepted for splits applies here too.
     settlements: [...state.settlements.values()],
     // R10.11/R11.19: every completed idempotent request's original body and
     // response, so import restores retries exactly (R10.13/R10.14).

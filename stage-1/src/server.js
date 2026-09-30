@@ -13,6 +13,7 @@ const { registerMeRoutes } = require('./routes/me');
 const { registerPaymentsRoutes } = require('./routes/payments');
 const { registerActivityRoutes } = require('./routes/activity');
 const { registerRequestsRoutes } = require('./routes/requests');
+const { registerSplitsRoutes } = require('./routes/splits');
 const { Store } = require('./store');
 
 function buildRouter(store) {
@@ -25,6 +26,7 @@ function buildRouter(store) {
   registerPaymentsRoutes(router, store);
   registerActivityRoutes(router, store);
   registerRequestsRoutes(router, store);
+  registerSplitsRoutes(router, store);
   return router;
 }
 
