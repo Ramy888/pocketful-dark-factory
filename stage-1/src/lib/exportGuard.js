@@ -155,4 +155,89 @@ function checkExportCoverage(emptyState, serializeState, exclusions = EXCLUSIONS
   return { ok: missing.length === 0, missing, keys, emitted, invalidExclusions };
 }
 
-module.exports = { checkExportCoverage, isEmitted, EXCLUSIONS };
+// C8/criterion 13 (W9): checkExportCoverage only proves a *collection*
+// reaches the export -- the `payments` key being emitted says nothing
+// about whether every field of a payment survives the mapper. A field a
+// mapper forgets would still pass every check above it while silently
+// losing data on every export.
+//
+// The verifier built the naive version of this first: compare a live
+// record's own keys against its exported counterpart's keys by exact
+// string match. It fired on `idempotency`'s bodyCanonical/responseBody --
+// correctly renamed (to body/response, content preserved), not dropped.
+// A key-name-only comparison cannot tell rename from drop, and four of
+// the five mappers here rename at least one field by the camelCase (Node
+// internals) vs snake_case (the wire format) convention alone. So a plain
+// key name is first normalised camelCase -> snake_case before comparing
+// (which is not a rename this project makes a decision about, it is a
+// mechanical fact of the two naming conventions in play), and only a
+// genuine rename -- a different word, not just a different case
+// convention -- needs an entry in `renames`, the same "the excuse must
+// name something real" discipline D44 already applies one level up: a
+// rename target that is not actually a key of the exported record still
+// counts as missing.
+const RECORD_RENAMES = {
+  idempotency: { bodyCanonical: 'body', responseBody: 'response' },
+};
+
+function toSnakeCase(key) {
+  return key.replace(/[A-Z]/g, (c) => `_${c.toLowerCase()}`);
+}
+
+function fieldCovered(key, exportedKeys, collectionRenames) {
+  if (exportedKeys.has(key) || exportedKeys.has(toSnakeCase(key))) return true;
+  const target = collectionRenames[key];
+  return !!target && exportedKeys.has(target);
+}
+
+// `state` must hold real records (from emptyState()'s Maps, e.g. built by
+// exercising the real routes) -- this checks what those live records'
+// *own* keys are, not a hypothetical shape. Records are matched to their
+// exported counterpart by `id` for users/payments/requests/splits (both
+// sides use `id` as the primary key); idempotency records carry no id, so
+// they are matched positionally, which serializeState's [...map.values()]
+// iteration keeps aligned with the live Map's own iteration order.
+//
+// Returns { ok, missing }. `missing` names every `collection.field` whose
+// live value could not be found, under any allowed name, in its exported
+// counterpart. An empty collection contributes nothing to check -- there
+// is no live record to demand coverage of (settlements, pre-W10).
+function checkRecordFieldCoverage(state, serializeState, renames = RECORD_RENAMES) {
+  const exported = serializeState(state);
+  const missing = [];
+
+  function checkByOwnId(collection, liveMap) {
+    const exportedById = new Map((exported[collection] || []).map((r) => [r.id, r]));
+    const collectionRenames = renames[collection] || {};
+    for (const live of liveMap.values()) {
+      const exportedRecord = exportedById.get(live.id);
+      const exportedKeys = new Set(Object.keys(exportedRecord || {}));
+      for (const key of Object.keys(live)) {
+        if (!fieldCovered(key, exportedKeys, collectionRenames)) missing.push(`${collection}.${key}`);
+      }
+    }
+  }
+
+  checkByOwnId('users', state.usersById);
+  checkByOwnId('payments', state.payments);
+  checkByOwnId('requests', state.requests);
+  checkByOwnId('splits', state.splits);
+
+  {
+    const collectionRenames = renames.idempotency || {};
+    const exportedList = exported.idempotency || [];
+    [...state.idempotency.values()].forEach((live, i) => {
+      const exportedKeys = new Set(Object.keys(exportedList[i] || {}));
+      for (const key of Object.keys(live)) {
+        if (!fieldCovered(key, exportedKeys, collectionRenames)) missing.push(`idempotency.${key}`);
+      }
+    });
+  }
+
+  return { ok: missing.length === 0, missing };
+}
+
+module.exports = {
+  checkExportCoverage, isEmitted, EXCLUSIONS,
+  checkRecordFieldCoverage, RECORD_RENAMES,
+};

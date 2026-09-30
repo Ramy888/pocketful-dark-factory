@@ -76,4 +76,4 @@ function runIdempotent(store, { user, method, path, rawKey, body }, handler) {
   return result;
 }
 
-module.exports = { runIdempotent, canonicalize };
+module.exports = { runIdempotent, canonicalize, mapKey };
