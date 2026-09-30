@@ -158,6 +158,53 @@ suite('07 activity feed', () => {
     });
   });
 
+  // D51 drew the line I had not: the *particular* order of two same-second items is
+  // unspecified on /activity (R8.36) and settled only by a decision on /requests (D9, and
+  // advisory here because a decision is not the specification) -- but **determinism under a
+  // static state** is spec-level on both, because §8 defines limit/offset/has_more as a
+  // paging contract and a contract whose pages do not compose into the list is broken
+  // whatever the tie order. The suite checked page sizes and has_more and never that the
+  // pages actually compose; a feed returning one item on two pages, or skipping one, passed.
+  // R8.36's exemption is for concurrent writes, so every write happens before any read here.
+  test('paging a static feed composes into the unpaged feed exactly once', ['R8.37', 'R8.26'], async (t) => {
+    const c = await loginAll(t);
+    for (let i = 0; i < 11; i += 1) {
+      const r = await api(t, { method: 'POST', path: '/payments', token: c.tokens.ada, idemKey: key('compose'), body: { to_handle: 'bob', amount: 1 + i, visibility: 'public' } });
+      if (!t.status(r, 201, { ref: 'R8.37', what: `setup: payment ${i} must exist (D47)` })) return;
+    }
+    const all = await activity(t, c.tokens.ada, { limit: 200 });
+    if (!t.status(all, 200, { ref: 'R8.37', what: 'the unpaged feed' })) return;
+    const whole = (all.json.payments || []).map((p) => p.payment_id);
+
+    // Repeating the unpaged read with no write in between must agree, or nothing below
+    // can mean anything: pages cannot compose into a list that is not itself stable.
+    const again = await activity(t, c.tokens.ada, { limit: 200 });
+    if (!t.status(again, 200, { ref: 'R8.37', what: 'the unpaged feed, read a second time' })) return;
+    t.deep((again.json.payments || []).map((p) => p.payment_id), whole, {
+      ref: 'R8.37', what: 'two unpaged reads with no write between them', res: again,
+      expected: 'the identical order both times',
+    });
+
+    const LIMIT = 4;
+    const walked = [];
+    for (let offset = 0; offset < whole.length + LIMIT; offset += LIMIT) {
+      const page = await activity(t, c.tokens.ada, { limit: LIMIT, offset });
+      if (!t.status(page, 200, { ref: 'R8.37', what: `limit=${LIMIT}&offset=${offset}` })) return;
+      const ids = (page.json.payments || []).map((p) => p.payment_id);
+      walked.push(...ids);
+      const expectMore = offset + LIMIT < whole.length;
+      t.eq(page.json.has_more, expectMore, {
+        ref: 'R8.26', what: `has_more at offset=${offset} of ${whole.length}`, res: page,
+      });
+      if (offset >= whole.length) break;
+    }
+    t.deep(walked, whole, {
+      ref: 'R8.37', what: `walking the feed ${LIMIT} at a time`, res: all,
+      expected: 'every item exactly once, in the unpaged order',
+      actual: `${walked.length} items, ${new Set(walked).size} distinct, from an unpaged list of ${whole.length}`,
+    });
+  });
+
   test('seeded payments are ordered by their position in the fixture array', ['D10'], async (t) => {
     const fx = await reset(t, 'eur');
     const ada = await login(t, 'ada@example.com');

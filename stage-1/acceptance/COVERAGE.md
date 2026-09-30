@@ -7,11 +7,11 @@ no check is listed as a gap, and every gap must carry a reason.
 | | |
 |---|---|
 | requirement references | 171 |
-| references with at least one check | 149 |
-| references deliberately left to out-of-band verification | 22 |
+| references with at least one check | 150 |
+| references deliberately left to out-of-band verification | 21 |
 | references with no check and no stated reason | 0 |
 | coordinator interpretations checked (advisory only) | 17 of 17 |
-| checks | 207 (161 blocking, 46 advisory) |
+| checks | 213 (167 blocking, 46 advisory) |
 
 A **blocking** check fails the suite and rejects a handoff. An **advisory** check is one
 where the specification text does not settle the answer: it records what the service did
@@ -30,10 +30,10 @@ its reasoning in the source and prints it on failure.
 | R1.4 | Payments appear in an activity feed with public or private visibility. | 07: the feed shows a payment if and only if it is public or the caller is a party |
 | R1.5 | Authorized operators can submit groups of transfers as settlements. | 09: a settlement returns settlement_id, committed_at and payments in input order |
 | R1.6 | Only the HTTP API is required. | **not checked over HTTP** — A statement of scope, not a behaviour. The suite tests the HTTP API only, which is what it asserts. |
-| R1.7 | The sum of wallet balances always equals the total seeded by the last POST /_test/reset, including under concurrent requests and retries. | 02: the sum of wallet balances equals the seeded total<br>03: a signup never mints a user id the fixture already seeded<br>04: every wallet total is preserved across a run of payments<br>05: concurrent requests with different keys each take effect once<br>06: a request lifecycle preserves the seeded total throughout<br>08: balances still sum to the seeded total after many splits are paid in full<br>09: the seeded total survives a run of settlements<br>11: no precedence question ever moves money<br>12: a sustained mixed load never breaks the seeded total or goes negative<br>12: concurrent settlements competing for the same funds stay consistent |
+| R1.7 | The sum of wallet balances always equals the total seeded by the last POST /_test/reset, including under concurrent requests and retries. | 02: the sum of wallet balances equals the seeded total<br>03: a signup never mints a user id the fixture already seeded<br>04: no sequence of legal payments destroys money or exceeds the arithmetic range<br>04: every wallet total is preserved across a run of payments<br>05: concurrent requests with different keys each take effect once<br>06: a request lifecycle preserves the seeded total throughout<br>08: balances still sum to the seeded total after many splits are paid in full<br>09: the seeded total survives a run of settlements<br>11: no precedence question ever moves money<br>12: a sustained mixed load never breaks the seeded total or goes negative<br>12: concurrent settlements competing for the same funds stay consistent |
 | R1.8 | No wallet balance may be negative, including transiently. | 04: a payment may spend the whole balance but not one unit more<br>11: no precedence question ever moves money<br>12: a sustained mixed load never breaks the seeded total or goes negative<br>12: balances sampled while money is moving are never negative<br>12: concurrent settlements competing for the same funds stay consistent |
 | R1.9 | A payment request may move money at most once. | 06: a request moves money at most once<br>12: a request under concurrent payment attempts moves money once<br>12: concurrent pay, decline and cancel on one request produce one outcome |
-| R1.10 | All amounts are exact integer counts of minor units. | **not checked over HTTP** — Restated with enforcement detail as R4.1, R4.2 and R4.17, which are checked. |
+| R1.10 | All amounts are exact integer counts of minor units. | 04: no sequence of legal payments destroys money or exceeds the arithmetic range |
 | R1.11 | Deposits, top-ups, withdrawals, cards and bank integrations are out of scope; money moves only between existing wallets. | **not checked over HTTP** — A statement of scope. Partially covered in substance: the suite checks that money only moves between existing wallets (unknown handle is 404 everywhere). The absence of deposit, top-up, withdrawal, card and bank endpoints is not something an acceptance suite can prove, only the absence of a documented one. |
 
 ### Specification 2
@@ -96,7 +96,7 @@ its reasoning in the source and prints it on failure.
 | R4.14 | Requests never appear in the activity feed; GET /requests returns only requests where the caller is requester or payer. | 06: GET /requests returns only requests where the caller is requester or payer<br>06: requests never appear in the activity feed |
 | R4.15 | A split is not a feed item; its requests are visible to their own two parties and the payments that fulfil them follow the feed rule. | 07: payments settling a request appear in the feed under the ordinary rule<br>08: a split is not a feed item<br>08: a split's requests are visible only to their own two parties |
 | R4.16 | Visibility is one value on the payment, seen identically by both parties and by everyone else; a private payment is hidden from third parties, not from its own receiver. | 07: a private payment is visible to its own receiver and sender<br>07: a public payment is seen identically by parties and third parties |
-| R4.17 | amount is at most 1000000000 on any single request; no operation produces a balance outside 2^53; monetary arithmetic is exact. | 04: the maximum single amount of 1000000000 is accepted<br>04: minor-unit arithmetic stays exact at the top of the range |
+| R4.17 | amount is at most 1000000000 on any single request; no operation produces a balance outside 2^53; monetary arithmetic is exact. | 04: the maximum single amount of 1000000000 is accepted<br>04: minor-unit arithmetic stays exact at the top of the range<br>04: no sequence of legal payments destroys money or exceeds the arithmetic range<br>04: a single large payment cannot push a balance past the arithmetic range |
 | R4.18 | The fixture format: currency, minor_units, users[], payments[], requests[] with the fields shown. | 02: seeded payments and requests are visible with their seeded values<br>02: a seeded request may arrive in a terminal status *(advisory)*<br>02: a fixture with two seeded payments sharing an id is not silently collapsed *(advisory)* |
 | R4.19 | Seeded users can log in with the given password immediately. | 02: seeded users log in with the fixture password immediately |
 | R4.20 | A seeded balance is the balance after every seeded payment; seeded payments are not replayed against balances. | 02: seeded balances are used as given and never re-derived from seeded payments |
@@ -139,7 +139,7 @@ its reasoning in the source and prints it on failure.
 | R6.8 | Every other endpoint requires a bearer token, except /health, /_test/reset and the two auth endpoints (and the section 10 test endpoints, which are stated unauthenticated). | 01: GET /health needs no Authorization header<br>03: protected endpoints reject a missing, malformed or unknown token with 401 |
 | R6.9 | Authorization: Bearer <token>. | **not checked over HTTP** — The header form itself is exercised by every authenticated call in the suite; there is no separate check because a wrong form would fail all of them. |
 | R6.10 | Tokens do not expire; an account may have multiple valid tokens and concurrent sessions. | 03: an account may hold several valid tokens at once<br>03: a signup token and a login token for the same account both work<br>03: a signup never mints a user id the fixture already seeded |
-| R6.11 | Passwords are stored with bcrypt, scrypt, Argon2 or an equivalent; plaintext storage is not permitted. | 03: no plaintext password is recoverable from the exported state |
+| R6.11 | Passwords are stored with bcrypt, scrypt, Argon2 or an equivalent; plaintext storage is not permitted. | 03: no plaintext password is recoverable from the exported state<br>03: two users with the same password do not share one stored hash<br>03: two signups with the same password do not share one stored hash |
 | R6.12 | Email verification, password reset, refresh tokens and role-management endpoints are out of scope. | **not checked over HTTP** — A statement of scope: there are no such endpoints to test. |
 
 ### Specification 7
@@ -151,10 +151,10 @@ its reasoning in the source and prints it on failure.
 | R7.3 | The key is scoped to the authenticated user; two users may use the same string with no interaction. | 05: a key is scoped to the authenticated user |
 | R7.4 | A replay is the same user, method, path and body; the same key and body on a different path is a different request and must succeed normally. | 05: the same key and body on a different path is a different request |
 | R7.5 | Header absent or empty: 400 missing_idempotency_key. | 05: an absent Idempotency-Key is 400 missing_idempotency_key<br>05: an empty Idempotency-Key is 400 missing_idempotency_key<br>09: an operator still needs an idempotency key<br>11: a missing idempotency key beats endpoint field validation *(advisory)* |
-| R7.6 | First use of the key: the normal response, 201. | 05: first use returns 201 and a replay of the same body returns 200 with the identical value |
+| R7.6 | First use of the key: the normal response, 201. | 05: first use returns 201 and a replay of the same body returns 200 with the identical value<br>05: a completed idempotent request reaches GET /_test/export through the delivered image |
 | R7.7 | Replay with the same body: 200, with a body identical to the original response as a JSON value. | 05: first use returns 201 and a replay of the same body returns 200 with the identical value |
 | R7.8 | The same key with a different body: 409 idempotency_key_reuse. | 05: the same key with a different body is 409 idempotency_key_reuse |
-| R7.9 | A key reused after the original request failed with 4xx is treated as a first use. | 05: a key used by a request that failed with 4xx is free again |
+| R7.9 | A key reused after the original request failed with 4xx is treated as a first use. | 05: a key used by a request that failed with 4xx is free again<br>05: a key left free by a 4xx contributes no record to the export |
 | R7.10 | "Same body" means the same JSON value after parsing; key order and whitespace do not matter. | 05: a replay is recognised across key order and whitespace |
 | R7.11 | For concurrent identical requests with an unused key, exactly one returns 201 and the others 200 with the same body; the operation takes effect only once. | 05: concurrent identical requests apply once: exactly one 201, the rest 200<br>05: concurrent requests with different keys each take effect once |
 | R7.12 | A successful replay returns the original response even after the resource changes or is cancelled, and makes no further state changes. | 05: a successful replay still returns the original response after the resource changes |
@@ -228,9 +228,9 @@ its reasoning in the source and prints it on failure.
 | R10.8 | Invalid JSON follows section 5; missing fields, a wrong track or version, or an invalid state give 422 validation_failed without changing the destination. | 10: an invalid import is 422 and leaves the destination untouched<br>10: a state that did not come from this service is rejected, not half applied *(advisory)* |
 | R10.9 | Test control calls have a 10-second timeout. | 02: reset stays inside the 10 second test-control budget<br>03: reset stays inside the budget even when no two seeded passwords match *(advisory)*<br>10: test control endpoints answer within the 10 second budget |
 | R10.10 | Export is an atomic, read-only snapshot; subsequent source writes do not change it. | 10: export is a snapshot: later writes do not change what it restores |
-| R10.11 | Preserve accounts and hashed-password login, existing bearer tokens, currency, balances, payments, requests, permissions, and all completed idempotent request bodies and original responses. | 10: an unchanged export restores every observable fact about the state |
+| R10.11 | Preserve accounts and hashed-password login, existing bearer tokens, currency, balances, payments, requests, permissions, and all completed idempotent request bodies and original responses. | 05: a completed idempotent request reaches GET /_test/export through the delivered image<br>10: an unchanged export restores every observable fact about the state |
 | R10.12 | Identities, timestamps and monetary records must not be regenerated or replayed against an already-net balance. | 10: an unchanged export restores every observable fact about the state |
-| R10.13 | Failed request keys remain reusable. | 10: an unchanged export restores every observable fact about the state |
+| R10.13 | Failed request keys remain reusable. | 05: a key left free by a 4xx contributes no record to the export<br>10: an unchanged export restores every observable fact about the state |
 | R10.14 | Existing receipts, tokens and retries remain valid after import; replacing the state with a fresh fixture does not satisfy this. | 10: an unchanged export restores every observable fact about the state |
 | R10.15 | Import removes all previous destination data and credentials. | 10: an unchanged export restores every observable fact about the state<br>10: import is replacement, not merge, and repeats without duplicating |
 | R10.16 | Reset clears all state, including imported state. | 10: reset clears imported state |
@@ -295,8 +295,6 @@ building and starting the image.
 
 - **R1.6** — Only the HTTP API is required.
   - A statement of scope, not a behaviour. The suite tests the HTTP API only, which is what it asserts.
-- **R1.10** — All amounts are exact integer counts of minor units.
-  - Restated with enforcement detail as R4.1, R4.2 and R4.17, which are checked.
 - **R1.11** — Deposits, top-ups, withdrawals, cards and bank integrations are out of scope; money moves only between existing wallets.
   - A statement of scope. Partially covered in substance: the suite checks that money only moves between existing wallets (unknown handle is 404 everywhere). The absence of deposit, top-up, withdrawal, card and bank endpoints is not something an acceptance suite can prove, only the absence of a documented one.
 - **R2.1** — An HTTP service, a Dockerfile and a RUN.md with a command that builds and starts the service without manual setup.
