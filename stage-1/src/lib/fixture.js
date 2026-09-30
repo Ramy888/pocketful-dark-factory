@@ -145,22 +145,22 @@ async function validateFixture(fixture) {
   // parallel) work of hashing seeded passwords. Nothing above this line
   // touches the live store, so a validation failure never gets here.
   //
-  // Hashed once per *distinct* password value, not once per user: fixtures
-  // (including the specification's own example) typically seed the same
-  // password for every user, and scrypt is deliberately expensive, so
-  // hashing it 500 times over is 500x the cost for zero benefit. Hashing
-  // lazily at first login instead was rejected -- that would leave a
-  // just-seeded user's password in plaintext in memory until they log in,
-  // which is an observable violation of "no plaintext password storage"
-  // the moment anything reads state before then.
-  const hashByPassword = new Map();
-  await Promise.all([...new Set(pendingUsers.map((record) => record.plainPassword))].map(async (password) => {
-    hashByPassword.set(password, await hashPassword(password));
-  }));
-  for (const record of pendingUsers) {
-    record.passwordHash = hashByPassword.get(record.plainPassword);
+  // R6.11: one hash per *record*, never shared across users who happen to
+  // seed the same password value. hashPassword draws a fresh random salt
+  // per call, so this alone makes two equal passwords produce unrelated
+  // stored strings. An earlier version memoized by password value to save
+  // scrypt calls when a fixture repeats one password across many users --
+  // rejected on review: GET /_test/export is unauthenticated (R10.1) and
+  // publishes password_hash verbatim, so a shared hash string let any
+  // caller partition seeded users into password-equality classes for free.
+  // The worst case for cost was already "every user has a distinct
+  // password" (memoization buys nothing then), measured at ~1.4-1.5s for
+  // 500 users against a 3s budget -- hashing every record independently
+  // costs no more than that measured worst case.
+  await Promise.all(pendingUsers.map(async (record) => {
+    record.passwordHash = await hashPassword(record.plainPassword);
     delete record.plainPassword;
-  }
+  }));
 
   const now = new Date();
   let sequence = 0;
