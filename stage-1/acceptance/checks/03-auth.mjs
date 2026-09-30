@@ -432,6 +432,53 @@ suite('03 authentication and handles', () => {
     });
   });
 
+  // W2b probe, 784ea09: the seeding path hashes once per *distinct* password value and hands
+  // the same string to every user holding that password, so two users with one password get one
+  // byte-identical `password_hash` -- same salt, same digest. `GET /_test/export` is
+  // unauthenticated (spec 10) and publishes that field verbatim, so the export partitions the
+  // seeded user table into password-equality classes for any caller. Spec 6 names bcrypt, scrypt
+  // and Argon2, all of which salt per stored record; a shared salt is the one property those
+  // functions exist to provide. Blocking: this is the storage requirement itself, not a
+  // refinement of it.
+  test('two users with the same password do not share one stored hash', ['R6.11'], async (t) => {
+    const users = [];
+    for (let i = 0; i < 6; i++) {
+      users.push({
+        id: `u_${i}`, email: `same${i}@example.com`,
+        password: i < 4 ? 'one shared passphrase' : 'a different passphrase',
+        display_name: `Same ${i}`, handle: `same${i}`, balance: 0,
+      });
+    }
+    const res = await resetWith(t, { currency: 'EUR', minor_units: 2, users, payments: [], requests: [] }, null);
+    if (!t.status(res, 204, { ref: 'R3.3', what: 'reset with four users sharing one password' })) return;
+    const exp = await api(t, { path: '/_test/export' });
+    if (!t.status(exp, 200, { ref: 'R10.2', what: 'GET /_test/export' })) return;
+    const hashes = (exp.json && exp.json.state && exp.json.state.users || []).map((u) => u.password_hash);
+    const distinct = new Set(hashes);
+    t.ok(hashes.length > 0 && distinct.size === hashes.length, {
+      ref: 'R6.11', what: 'stored password hashes across users sharing a password', res: exp,
+      expected: `${hashes.length} distinct hashes for ${hashes.length} users -- one salt per stored record`,
+      actual: `${distinct.size} distinct hashes for ${hashes.length} users; the export discloses which accounts share a password`,
+    });
+  });
+
+  // The same property on the signup path, which salts correctly today. Kept so a future change
+  // that routes signup through the seeding helper cannot regress it unnoticed.
+  test('two signups with the same password do not share one stored hash', ['R6.11'], async (t) => {
+    await reset(t, 'eur');
+    await signup(t, 'twin1@example.com', 'Twin One', 'one shared passphrase');
+    await signup(t, 'twin2@example.com', 'Twin Two', 'one shared passphrase');
+    const exp = await api(t, { path: '/_test/export' });
+    if (!t.status(exp, 200, { ref: 'R10.2', what: 'GET /_test/export' })) return;
+    const users = (exp.json && exp.json.state && exp.json.state.users || []);
+    const twins = users.filter((u) => u.email === 'twin1@example.com' || u.email === 'twin2@example.com');
+    t.ok(twins.length === 2 && twins[0].password_hash !== twins[1].password_hash, {
+      ref: 'R6.11', what: 'stored hashes for two signups sharing a password', res: exp,
+      expected: 'two different hashes, one salt per stored record',
+      actual: twins.length === 2 ? 'both signups stored the identical hash string' : `found ${twins.length} of the 2 signed-up users in the export`,
+    });
+  });
+
   test('a new account can receive money and be asked for money immediately', ['R4.8'], async (t) => {
     await reset(t, 'eur');
     const fresh = await signup(t, 'fresh@example.com', 'Fresh');
