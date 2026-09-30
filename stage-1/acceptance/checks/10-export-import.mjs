@@ -59,8 +59,19 @@ async function buildRichState(t) {
   keys.split = key('exp-split');
   artifacts.split = await api(t, { method: 'POST', path: '/splits', token: c.tokens.ada, idemKey: keys.split, body: { amount: 1000, participant_handles: ['ada', 'bob', 'joiner'], note: 'shared' } });
 
+  // D54, applied to my own setup rather than discovered at a verdict. This helper seeds
+  // "everything worth preserving", which made every check in this group depend on the
+  // LAST surface to exist -- settlements, W10. R10.6's two-container check is mandatory
+  // for W9 by the plan, and could not have passed there: its setup 404s on /settlements
+  // one item early. So the settlement is seeded when the route exists and skipped when it
+  // does not, and the round trip is then proved over everything that does exist.
+  //
+  // Tolerant of absence, strict about presence: a 404 means the route is not built yet,
+  // anything else non-201 is a real failure. Once /settlements exists it can never be
+  // silently skipped, because it will not answer 404.
   keys.settlement = key('exp-stl');
-  artifacts.settlement = await api(t, { method: 'POST', path: '/settlements', token: c.tokens.op, idemKey: keys.settlement, body: { transfers: [{ from_handle: 'ada', to_handle: 'bob', amount: 40 }, { from_handle: 'rich', to_handle: 'joiner', amount: 50, visibility: 'private' }] } });
+  const settlementRes = await api(t, { method: 'POST', path: '/settlements', token: c.tokens.op, idemKey: keys.settlement, body: { transfers: [{ from_handle: 'ada', to_handle: 'bob', amount: 40 }, { from_handle: 'rich', to_handle: 'joiner', amount: 50, visibility: 'private' }] } });
+  artifacts.settlement = settlementRes.status === 404 ? null : settlementRes;
 
   // A key the service must leave reusable: the request failed with a 4xx.
   keys.failed = key('exp-failed');
@@ -68,6 +79,7 @@ async function buildRichState(t) {
 
   for (const [name, res] of Object.entries(artifacts)) {
     if (name === 'failed' || name === 'payPath') continue;
+    if (name === 'settlement' && res === null) continue; // route not built yet; see above
     if (!res || res.status !== 201) {
       t.record({ ref: 'R10.11', what: `setup ${name}`, expected: 'HTTP 201', actual: res ? `HTTP ${res.status}: ${res.text}` : 'no response', res });
       return null;
@@ -171,15 +183,18 @@ suite('10 export and import', () => {
       ['POST /requests', 'POST', '/requests', c.tokens.ada, keys.request, { payer_handle: 'bob', amount: 654, note: 'kept too' }, artifacts.request],
       ['POST /requests/{id}/pay', 'POST', artifacts.payPath, c.tokens.bob, keys.pay, { visibility: 'private' }, artifacts.pay],
       ['POST /splits', 'POST', '/splits', c.tokens.ada, keys.split, { amount: 1000, participant_handles: ['ada', 'bob', 'joiner'], note: 'shared' }, artifacts.split],
-      ['POST /settlements', 'POST', '/settlements', c.tokens.op, keys.settlement, { transfers: [{ from_handle: 'ada', to_handle: 'bob', amount: 40 }, { from_handle: 'rich', to_handle: 'joiner', amount: 50, visibility: 'private' }] }, artifacts.settlement],
     ];
+    if (artifacts.settlement) {
+      replays.push(['POST /settlements', 'POST', '/settlements', c.tokens.op, keys.settlement, { transfers: [{ from_handle: 'ada', to_handle: 'bob', amount: 40 }, { from_handle: 'rich', to_handle: 'joiner', amount: 50, visibility: 'private' }] }, artifacts.settlement]);
+    }
     for (const [label, method, path, tok, k, body, original] of replays) {
       const res = await api(t, { method, path, token: tok, idemKey: k, body });
       t.status(res, 200, { ref: 'R10.11', what: `replaying ${label} after import` });
       t.deep(res.json, original.json, { ref: 'R10.11', what: `the replayed ${label} response after import`, res });
     }
 
-    // R11.19: settlement membership survives.
+    // R11.19: settlement membership survives. Only reachable once /settlements exists.
+    if (artifacts.settlement) {
     const settlementId = artifacts.settlement.json.settlement_id;
     const feed = await activity(t, c.tokens.ada, { limit: 200 });
     const members = ((feed.json || {}).payments || []).filter((p) => p.settlement_id === settlementId);
@@ -194,6 +209,7 @@ suite('10 export and import', () => {
     t.status(stillOperator, 201, { ref: 'R11.19', what: 'the operator can still settle after import' });
     const notOperator = await api(t, { method: 'POST', path: '/settlements', token: c.tokens.ada, idemKey: key('post'), body: { transfers: [{ from_handle: 'ada', to_handle: 'bob', amount: 1 }] } });
     t.err(notOperator, 403, 'forbidden', { ref: 'R11.19', what: 'a non-operator is still refused after import' });
+    }
 
     // R10.15: everything created after the export is gone, credentials included.
     const ghostToken = await api(t, { path: '/me', token: ghost.json.token });
