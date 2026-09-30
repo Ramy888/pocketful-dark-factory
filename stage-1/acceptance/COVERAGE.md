@@ -11,7 +11,7 @@ no check is listed as a gap, and every gap must carry a reason.
 | references deliberately left to out-of-band verification | 21 |
 | references with no check and no stated reason | 0 |
 | coordinator interpretations checked (advisory only) | 17 of 17 |
-| checks | 213 (167 blocking, 46 advisory) |
+| checks | 217 (171 blocking, 46 advisory) |
 
 A **blocking** check fails the suite and rejects a handoff. An **advisory** check is one
 where the specification text does not settle the answer: it records what the service did
@@ -30,7 +30,7 @@ its reasoning in the source and prints it on failure.
 | R1.4 | Payments appear in an activity feed with public or private visibility. | 07: the feed shows a payment if and only if it is public or the caller is a party |
 | R1.5 | Authorized operators can submit groups of transfers as settlements. | 09: a settlement returns settlement_id, committed_at and payments in input order |
 | R1.6 | Only the HTTP API is required. | **not checked over HTTP** — A statement of scope, not a behaviour. The suite tests the HTTP API only, which is what it asserts. |
-| R1.7 | The sum of wallet balances always equals the total seeded by the last POST /_test/reset, including under concurrent requests and retries. | 02: the sum of wallet balances equals the seeded total<br>03: a signup never mints a user id the fixture already seeded<br>04: no sequence of legal payments destroys money or exceeds the arithmetic range<br>04: every wallet total is preserved across a run of payments<br>05: concurrent requests with different keys each take effect once<br>06: a request lifecycle preserves the seeded total throughout<br>08: balances still sum to the seeded total after many splits are paid in full<br>09: the seeded total survives a run of settlements<br>11: no precedence question ever moves money<br>12: a sustained mixed load never breaks the seeded total or goes negative<br>12: concurrent settlements competing for the same funds stay consistent |
+| R1.7 | The sum of wallet balances always equals the total seeded by the last POST /_test/reset, including under concurrent requests and retries. | 02: the seeded-balance cap is not computed with the arithmetic it guards against<br>02: the sum of wallet balances equals the seeded total<br>03: a signup never mints a user id the fixture already seeded<br>04: no sequence of legal payments destroys money or exceeds the arithmetic range<br>04: every wallet total is preserved across a run of payments<br>05: concurrent requests with different keys each take effect once<br>06: a request lifecycle preserves the seeded total throughout<br>08: balances still sum to the seeded total after many splits are paid in full<br>09: the seeded total survives a run of settlements<br>11: no precedence question ever moves money<br>12: a sustained mixed load never breaks the seeded total or goes negative<br>12: concurrent settlements competing for the same funds stay consistent |
 | R1.8 | No wallet balance may be negative, including transiently. | 04: a payment may spend the whole balance but not one unit more<br>11: no precedence question ever moves money<br>12: a sustained mixed load never breaks the seeded total or goes negative<br>12: balances sampled while money is moving are never negative<br>12: concurrent settlements competing for the same funds stay consistent |
 | R1.9 | A payment request may move money at most once. | 06: a request moves money at most once<br>12: a request under concurrent payment attempts moves money once<br>12: concurrent pay, decline and cancel on one request produce one outcome |
 | R1.10 | All amounts are exact integer counts of minor units. | 04: no sequence of legal payments destroys money or exceeds the arithmetic range |
@@ -40,13 +40,13 @@ its reasoning in the source and prints it on failure.
 
 | ref | requirement | checks |
 |---|---|---|
-| R2.1 | An HTTP service, a Dockerfile and a RUN.md with a command that builds and starts the service without manual setup. | **not checked over HTTP** — Repository artefacts (Dockerfile, RUN.md) and the build command. Verified by inspecting the delivered tree and running the documented commands, not over HTTP. |
+| R2.1 | An HTTP service, a Dockerfile and a RUN.md with a command that builds and starts the service without manual setup. | **not checked over HTTP** — Repository artefacts and the documented start command, not HTTP behaviour. Runnable: from stage-1/, `docker build -t pocketful-stage1 .` then `docker run -e PORT=8080 -p 8080:8080 pocketful-stage1` -- exactly RUN.md's two commands, copied not paraphrased -- then `curl http://localhost:8080/health` gives {"status":"ok"}. Run at every verdict from W1 onward. |
 | R2.2 | A docker-compose.yml is optional. | **not checked over HTTP** — States that a file is optional. Nothing to check. |
 | R2.3 | The submission is a containerized HTTP service, not a Python package; language, framework and storage are unrestricted. | **not checked over HTTP** — A constraint on the submission form, not on HTTP behaviour. |
 | R2.4 | The image must run on its own with -e PORT=<port> and a port mapping. | **not checked over HTTP** — How the container is started (-e PORT and a port mapping). The suite is pointed at whatever BASE_URL the launcher produced, so it exercises the result but cannot itself vary PORT. Checked out of band by starting the image twice. |
-| R2.5 | No outbound network at run time; all dependencies, initialization and seed data work inside the one container. | **not checked over HTTP** — Run-time network isolation. Checked out of band by starting the container with --network none; the suite is designed to pass in exactly that configuration, which is how it contributes evidence. |
+| R2.5 | No outbound network at run time; all dependencies, initialization and seed data work inside the one container. | **not checked over HTTP** — Run-time network isolation. Checked out of band: start the container with --network none (only lo, no route out) and run this suite INSIDE it against loopback, since --network none makes a published port inert and a host-side run cannot connect at all. Verified at W8: identical results inside the isolated container and outside it, so the suite contributes evidence rather than merely claiming to. |
 | R2.6 | Resource limits: 2 vCPU, 2 GiB, 60 s to first healthy response, up to 50 requests in flight, 5 s per request (10 s for POST /_test/reset), ephemeral disk. | 02: reset stays inside the 10 second test-control budget<br>03: reset stays inside the budget even when no two seeded passwords match *(advisory)*<br>12: a sustained mixed load never breaks the seeded total or goes negative |
-| R2.7 | Runtime assets and dependencies are included in the image. | **not checked over HTTP** — Image contents. Checked out of band by inspecting the built image. |
+| R2.7 | Runtime assets and dependencies are included in the image. | **not checked over HTTP** — Image contents, not HTTP behaviour. 'Inspecting the image' was too vague to run, so: `docker run --rm IMAGE sh -c 'cat /app/package.json'` shows dependencies {} and devDependencies {}; `docker run --rm IMAGE sh -c 'ls /app'` gives exactly `package.json src`; no node_modules exists outside node's own install; and every require() under /app/src resolves to a relative path or one of three builtins (crypto, http, util). The decisive evidence is shared with R2.5: a container with no network interfaces serves the whole suite, and nothing missing from the image could have been fetched. |
 
 ### Specification 3.1
 
@@ -96,7 +96,7 @@ its reasoning in the source and prints it on failure.
 | R4.14 | Requests never appear in the activity feed; GET /requests returns only requests where the caller is requester or payer. | 06: GET /requests returns only requests where the caller is requester or payer<br>06: requests never appear in the activity feed |
 | R4.15 | A split is not a feed item; its requests are visible to their own two parties and the payments that fulfil them follow the feed rule. | 07: payments settling a request appear in the feed under the ordinary rule<br>08: a split is not a feed item<br>08: a split's requests are visible only to their own two parties |
 | R4.16 | Visibility is one value on the payment, seen identically by both parties and by everyone else; a private payment is hidden from third parties, not from its own receiver. | 07: a private payment is visible to its own receiver and sender<br>07: a public payment is seen identically by parties and third parties |
-| R4.17 | amount is at most 1000000000 on any single request; no operation produces a balance outside 2^53; monetary arithmetic is exact. | 04: the maximum single amount of 1000000000 is accepted<br>04: minor-unit arithmetic stays exact at the top of the range<br>04: no sequence of legal payments destroys money or exceeds the arithmetic range<br>04: a single large payment cannot push a balance past the arithmetic range |
+| R4.17 | amount is at most 1000000000 on any single request; no operation produces a balance outside 2^53; monetary arithmetic is exact. | 02: the seeded-balance cap is not computed with the arithmetic it guards against<br>04: the maximum single amount of 1000000000 is accepted<br>04: minor-unit arithmetic stays exact at the top of the range<br>04: no sequence of legal payments destroys money or exceeds the arithmetic range<br>04: a single large payment cannot push a balance past the arithmetic range |
 | R4.18 | The fixture format: currency, minor_units, users[], payments[], requests[] with the fields shown. | 02: seeded payments and requests are visible with their seeded values<br>02: a seeded request may arrive in a terminal status *(advisory)*<br>02: a fixture with two seeded payments sharing an id is not silently collapsed *(advisory)* |
 | R4.19 | Seeded users can log in with the given password immediately. | 02: seeded users log in with the fixture password immediately |
 | R4.20 | A seeded balance is the balance after every seeded payment; seeded payments are not replayed against balances. | 02: seeded balances are used as given and never re-derived from seeded payments |
@@ -108,7 +108,7 @@ its reasoning in the source and prints it on failure.
 
 | ref | requirement | checks |
 |---|---|---|
-| R5.1 | Every 4xx and 5xx response carries {"error":{"code":..,"message":..}}. | 01: an unrouted path answers 4xx carrying the spec-5 error envelope<br>01: a wrong method on a known path answers 4xx with an error envelope |
+| R5.1 | Every 4xx and 5xx response carries {"error":{"code":..,"message":..}}. | 01: an unrouted path answers 4xx carrying the spec-5 error envelope<br>01: a wrong method on a known path answers 4xx with an error envelope<br>01: a hostile request body is answered, never with a 5xx |
 | R5.2 | 400 malformed_request: an unparseable body, or a field of the wrong JSON type. | 01: an unparseable body is 400 malformed_request<br>02: a fixture field of the wrong JSON type is 400 malformed_request *(advisory)*<br>03: signup and login reject missing fields with 422 and wrong types with 400<br>04: to_handle of the wrong JSON type is 400, and absent is 422<br>08: a non-string element inside participant_handles is rejected *(advisory)*<br>11: an unparseable body beats a missing idempotency key *(advisory)*<br>11: an unparseable body beats a missing token *(advisory)* |
 | R5.3 | 400 missing_idempotency_key: a required Idempotency-Key header absent or empty. | 05: an absent Idempotency-Key is 400 missing_idempotency_key |
 | R5.4 | 401 unauthenticated: a missing, malformed or unknown bearer token. | 03: protected endpoints reject a missing, malformed or unknown token with 401<br>03: an idempotency key is never required before authentication is settled *(advisory)*<br>11: an unknown bearer token beats an invalid query parameter *(advisory)* |
@@ -123,7 +123,7 @@ its reasoning in the source and prints it on failure.
 | R5.13 | Idempotency-Key is 1 to 255 characters, otherwise 422 validation_failed. | 05: a key of 1 and of 255 characters is accepted<br>05: a key of 256 characters is 422 validation_failed<br>11: an over-long idempotency key beats endpoint field validation *(advisory)* |
 | R5.14 | limit is an integer 1 to 200, otherwise 422 validation_failed. | **not checked over HTTP** — The same rule as the limit clause of R8.25, checked there for both list endpoints. |
 | R5.15 | offset is an integer 0 or more, otherwise 422 validation_failed. | **not checked over HTTP** — The same rule as the offset clause of R8.25, checked there for both list endpoints. |
-| R5.16 | Requests must not produce 5xx responses, including under concurrent load. | 12: a sustained mixed load never breaks the seeded total or goes negative<br>12: reads stay coherent while writes are in flight |
+| R5.16 | Requests must not produce 5xx responses, including under concurrent load. | 01: a hostile request body is answered, never with a 5xx<br>12: a sustained mixed load never breaks the seeded total or goes negative<br>12: reads stay coherent while writes are in flight |
 
 ### Specification 6
 
@@ -188,8 +188,8 @@ its reasoning in the source and prints it on failure.
 | R8.22 | GET /requests returns requests where the caller is requester or payer and no others, newest first by created_at. | 06: GET /requests returns only requests where the caller is requester or payer<br>06: requests are ordered newest first<br>08: a split's requests are visible only to their own two parties |
 | R8.23 | direction is incoming (the caller is the payer), outgoing (the caller is the requester) or absent for both. | 06: direction and status filters select exactly what they name |
 | R8.24 | status is one of the four statuses, or absent for all. | 06: direction and status filters select exactly what they name |
-| R8.25 | limit defaults to 50, range 1 to 200; offset defaults to 0 and must be 0 or more; outside either range is 422, as is an unknown direction or status value. | 06: an unknown direction or status value is 422<br>06: limit, offset and has_more behave as specified |
-| R8.26 | has_more is true when items exist beyond the last one returned. | 06: limit, offset and has_more behave as specified<br>07: limit, offset and has_more behave as on GET /requests |
+| R8.25 | limit defaults to 50, range 1 to 200; offset defaults to 0 and must be 0 or more; outside either range is 422, as is an unknown direction or status value. | 06: an unknown direction or status value is 422<br>06: paging a static request list composes into the unpaged list exactly once<br>06: limit, offset and has_more behave as specified |
+| R8.26 | has_more is true when items exist beyond the last one returned. | 06: paging a static request list composes into the unpaged list exactly once<br>06: limit, offset and has_more behave as specified<br>07: paging a static feed composes into the unpaged feed exactly once<br>07: limit, offset and has_more behave as on GET /requests |
 | R8.27 | GET /requests returns {"requests":[..],"has_more":bool}. | 06: GET /requests returns only requests where the caller is requester or payer |
 | R8.28 | POST /splits takes amount, participant_handles and note; the caller may be included in participant_handles or omitted. | 08: a split returns the documented object and one request per other participant<br>08: note defaults to "" on a split<br>08: the caller may be omitted from participant_handles |
 | R8.29 | Shares follow the section 9 rule in the order the handles are given; a request is created for every participant except the caller, each for that participant share, with the caller as requester. | 08: a split returns the documented object and one request per other participant |
@@ -200,7 +200,7 @@ its reasoning in the source and prints it on failure.
 | R8.34 | Nothing about a split checks anyone balance. | 08: nothing about a split checks a balance |
 | R8.35 | GET /activity returns payments visible by the feed contract, newest first by created_at, as {"payments":[..],"has_more":bool}. | 07: a feed item is a full payment object<br>07: the feed is ordered newest first |
 | R8.36 | The relative order of two payments created within the same second is unspecified, and stable pagination during concurrent writes is not required for GET /activity. | **not checked over HTTP** — An explicit relaxation, not a requirement. The suite relies on it: it never asserts an order between two items created in the same second, and never asserts pagination stability during concurrent writes. |
-| R8.37 | limit and offset on GET /activity behave exactly as on GET /requests. | 07: limit, offset and has_more behave as on GET /requests |
+| R8.37 | limit and offset on GET /activity behave exactly as on GET /requests. | 07: paging a static feed composes into the unpaged feed exactly once<br>07: limit, offset and has_more behave as on GET /requests |
 | R8.38 | An item in GET /activity is a payment object of the shape in R8.3. | 07: a feed item is a full payment object |
 | R8.39 | An item in GET /requests is a request object of the shape in R8.13. | 06: GET /requests returns only requests where the caller is requester or payer |
 
@@ -234,7 +234,7 @@ its reasoning in the source and prints it on failure.
 | R10.14 | Existing receipts, tokens and retries remain valid after import; replacing the state with a fresh fixture does not satisfy this. | 10: an unchanged export restores every observable fact about the state |
 | R10.15 | Import removes all previous destination data and credentials. | 10: an unchanged export restores every observable fact about the state<br>10: import is replacement, not merge, and repeats without duplicating |
 | R10.16 | Reset clears all state, including imported state. | 10: reset clears imported state |
-| R10.17 | State need not survive an abrupt container restart. | **not checked over HTTP** — An explicit relaxation. The suite never restarts the container and never requires state to survive one. |
+| R10.17 | State need not survive an abrupt container restart. | **not checked over HTTP** — An explicit relaxation -- nothing can fail it, so the only risk is the suite demanding MORE than the specification allows. Verified rather than asserted: the suite imports only node:fs, node:http, node:https, node:path and node:url, so it has no mechanism to restart anything, and no check mentions state surviving a restart. Observed behaviour at W2b for the record: a restart clears all state and the service returns to health in ~2 s, which the specification permits. |
 | R10.18 | Exports may contain credentials and session tokens; handle them as private test artifacts. | **not checked over HTTP** — An instruction to whoever holds an export, not a service behaviour. Honoured rather than tested: the suite never writes an export to disk and never prints one. |
 
 ### Specification 11
@@ -298,7 +298,7 @@ building and starting the image.
 - **R1.11** — Deposits, top-ups, withdrawals, cards and bank integrations are out of scope; money moves only between existing wallets.
   - A statement of scope. Partially covered in substance: the suite checks that money only moves between existing wallets (unknown handle is 404 everywhere). The absence of deposit, top-up, withdrawal, card and bank endpoints is not something an acceptance suite can prove, only the absence of a documented one.
 - **R2.1** — An HTTP service, a Dockerfile and a RUN.md with a command that builds and starts the service without manual setup.
-  - Repository artefacts (Dockerfile, RUN.md) and the build command. Verified by inspecting the delivered tree and running the documented commands, not over HTTP.
+  - Repository artefacts and the documented start command, not HTTP behaviour. Runnable: from stage-1/, `docker build -t pocketful-stage1 .` then `docker run -e PORT=8080 -p 8080:8080 pocketful-stage1` -- exactly RUN.md's two commands, copied not paraphrased -- then `curl http://localhost:8080/health` gives {"status":"ok"}. Run at every verdict from W1 onward.
 - **R2.2** — A docker-compose.yml is optional.
   - States that a file is optional. Nothing to check.
 - **R2.3** — The submission is a containerized HTTP service, not a Python package; language, framework and storage are unrestricted.
@@ -306,9 +306,9 @@ building and starting the image.
 - **R2.4** — The image must run on its own with -e PORT=<port> and a port mapping.
   - How the container is started (-e PORT and a port mapping). The suite is pointed at whatever BASE_URL the launcher produced, so it exercises the result but cannot itself vary PORT. Checked out of band by starting the image twice.
 - **R2.5** — No outbound network at run time; all dependencies, initialization and seed data work inside the one container.
-  - Run-time network isolation. Checked out of band by starting the container with --network none; the suite is designed to pass in exactly that configuration, which is how it contributes evidence.
+  - Run-time network isolation. Checked out of band: start the container with --network none (only lo, no route out) and run this suite INSIDE it against loopback, since --network none makes a published port inert and a host-side run cannot connect at all. Verified at W8: identical results inside the isolated container and outside it, so the suite contributes evidence rather than merely claiming to.
 - **R2.7** — Runtime assets and dependencies are included in the image.
-  - Image contents. Checked out of band by inspecting the built image.
+  - Image contents, not HTTP behaviour. 'Inspecting the image' was too vague to run, so: `docker run --rm IMAGE sh -c 'cat /app/package.json'` shows dependencies {} and devDependencies {}; `docker run --rm IMAGE sh -c 'ls /app'` gives exactly `package.json src`; no node_modules exists outside node's own install; and every require() under /app/src resolves to a relative path or one of three builtins (crypto, http, util). The decisive evidence is shared with R2.5: a container with no network interfaces serves the whole suite, and nothing missing from the image could have been fetched.
 - **R3.1** — Listen on 0.0.0.0 using the PORT environment variable, default 8080.
   - The bind address and the PORT default are properties of how the process starts. The suite proves the service answers on the URL it was given; 0.0.0.0 and the 8080 default are checked out of band.
 - **R4.4** — Users identify recipients by handle; directory and user-search endpoints are out of scope.
@@ -328,7 +328,7 @@ building and starting the image.
 - **R8.36** — The relative order of two payments created within the same second is unspecified, and stable pagination during concurrent writes is not required for GET /activity.
   - An explicit relaxation, not a requirement. The suite relies on it: it never asserts an order between two items created in the same second, and never asserts pagination stability during concurrent writes.
 - **R10.17** — State need not survive an abrupt container restart.
-  - An explicit relaxation. The suite never restarts the container and never requires state to survive one.
+  - An explicit relaxation -- nothing can fail it, so the only risk is the suite demanding MORE than the specification allows. Verified rather than asserted: the suite imports only node:fs, node:http, node:https, node:path and node:url, so it has no mechanism to restart anything, and no check mentions state surviving a restart. Observed behaviour at W2b for the record: a restart clears all state and the service returns to health in ~2 s, which the specification permits.
 - **R10.18** — Exports may contain credentials and session tokens; handle them as private test artifacts.
   - An instruction to whoever holds an export, not a service behaviour. Honoured rather than tested: the suite never writes an export to disk and never prints one.
 - **R11.4** — The body is {"transfers":[{from_handle,to_handle,amount}, ..]}.
@@ -346,6 +346,14 @@ BASE_URL=http://127.0.0.1:8080 node stage-1/acceptance/main.mjs
 BASE_URL=http://127.0.0.1:8080 ./stage-1/acceptance/run.sh
 ```
 
-The suite talks HTTP and nothing else, so it runs unchanged against a container started
-with `--network none`. Set `ALT_BASE_URL` to a second, independently started container to
-additionally exercise R10.6 (an export that carries no dependency on its source).
+The suite talks HTTP and nothing else, so it runs unchanged against a container that has
+no network interfaces at all. The method matters: `--network none` makes a published port
+inert, so the suite cannot reach the service from the host. Mount this directory read-only
+and run it *inside* the container against loopback:
+
+    docker run -d --name iso --network none -e PORT=8080 \
+      -v "$(pwd)/stage-1/acceptance:/suite:ro" <image>
+    docker exec -e BASE_URL=http://127.0.0.1:8080 iso node /suite/main.mjs
+
+Set `ALT_BASE_URL` to a second, independently started container to additionally exercise
+R10.6 (an export that carries no dependency on its source).
