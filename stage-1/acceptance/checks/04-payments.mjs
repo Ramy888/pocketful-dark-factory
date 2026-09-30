@@ -317,6 +317,100 @@ suite('04 payments', () => {
     }
   });
 
+  // C6. R4.17: "no operation produces a balance outside +-2^53", and "monetary arithmetic
+  // must preserve exact minor-unit values without rounding error". Fixture validation caps
+  // each user at 2^53 but nothing caps the SUM, so two users each seeded at 2^53 give a
+  // legal fixture whose total is 2^54. Above 2^53 the integer grid is no longer unit-spaced,
+  // so a credit of 1 rounds away while the matching debit lands exactly: the sender pays,
+  // the receiver does not receive, and the difference is destroyed. R1.7 -- the sum of
+  // balances always equals the seeded total -- then fails, through payments that every rule
+  // in section 8 requires to succeed and that all answer 201.
+  //
+  // Written so either remedy passes: rejecting such a fixture at reset (the sum cap), or
+  // keeping every balance exact some other way. The requirement is the outcome, not the
+  // mechanism, so this asserts only what the specification states.
+  test('no sequence of legal payments destroys money or exceeds the arithmetic range', ['R4.17', 'R1.7', 'R1.10'], async (t) => {
+    const TWO53 = 9007199254740992;
+    const fixture = {
+      currency: 'EUR', minor_units: 2, payments: [], requests: [],
+      users: [
+        { id: 'u_hi', email: 'hi@example.com', password: PW, display_name: 'Hi', handle: 'hi', balance: TWO53 },
+        { id: 'u_lo', email: 'lo@example.com', password: PW, display_name: 'Lo', handle: 'lo', balance: TWO53 },
+      ],
+    };
+    const res = await resetWith(t, fixture, null);
+
+    // Refusing the fixture is a complete answer: a total at or below 2^53 bounds every
+    // balance forever, because balances are non-negative (1.2) and R1.7 conserves the total.
+    if (res.status === 422) {
+      t.ok(res.json && res.json.error && res.json.error.code === 'validation_failed', {
+        ref: 'R4.17', what: 'a fixture whose seeded balances sum above 2^53', res,
+        expected: '422 validation_failed', actual: `422 with code ${res.json && res.json.error && res.json.error.code}`,
+      });
+      return;
+    }
+    if (!t.status(res, 204, { ref: 'R3.3', what: 'reset with two users each at 2^53' })) return;
+
+    const hi = await login(t, 'hi@example.com');
+    if (!hi) return;
+
+    // Control (D47): the write path must work, or "no money was destroyed" is trivially true.
+    const control = await pay(t, hi.token, { to_handle: 'lo', amount: 1 });
+    if (!t.status(control, 201, { ref: 'R8.2', what: 'control: POST /payments must succeed' })) return;
+
+    const N = 50;
+    for (let i = 0; i < N; i += 1) {
+      const r = await pay(t, hi.token, { to_handle: 'lo', amount: 1 });
+      if (!t.status(r, 201, { ref: 'R8.2', what: `payment ${i} of 1 minor unit` })) return;
+    }
+
+    const dump = await api(t, { path: '/_test/export' });
+    if (!t.status(dump, 200, { ref: 'R10.2', what: 'GET /_test/export' })) return;
+    const users = ((dump.json || {}).state || {}).users || [];
+    const sum = users.reduce((acc, u) => acc + u.balance, 0);
+    const seeded = ((dump.json || {}).state || {}).seeded_total;
+
+    t.eq(sum, seeded, {
+      ref: 'R1.7', what: `the sum of balances after ${N + 1} payments of 1`, res: dump,
+      expected: `equal to the seeded total ${seeded}`,
+      actual: `${sum}; ${seeded - sum} minor units destroyed by credits that rounded away above 2^53`,
+    });
+    for (const u of users) {
+      t.ok(Math.abs(u.balance) <= TWO53, {
+        ref: 'R4.17', what: `the balance of ${u.handle}`, res: dump,
+        expected: 'within +-2^53', actual: String(u.balance),
+      });
+    }
+  });
+
+  // The same range clause reached by one large payment rather than many small ones: here the
+  // credit is exact, so no money is lost, but the resulting balance is outside the range.
+  test('a single large payment cannot push a balance past the arithmetic range', ['R4.17'], async (t) => {
+    const TWO53 = 9007199254740992;
+    const fixture = {
+      currency: 'EUR', minor_units: 2, payments: [], requests: [],
+      users: [
+        { id: 'u_src', email: 'src@example.com', password: PW, display_name: 'Src', handle: 'src', balance: 1000000000 },
+        { id: 'u_dst', email: 'dst@example.com', password: PW, display_name: 'Dst', handle: 'dst', balance: TWO53 },
+      ],
+    };
+    const res = await resetWith(t, fixture, null);
+    if (res.status === 422) return; // the fixture was refused; nothing further to prove
+    if (!t.status(res, 204, { ref: 'R3.3', what: 'reset with a recipient at 2^53' })) return;
+    const src = await login(t, 'src@example.com');
+    if (!src) return;
+    const r = await pay(t, src.token, { to_handle: 'dst', amount: 1000000000 });
+    if (r.status !== 201) return; // refusing the payment is also a complete answer
+    const dump = await api(t, { path: '/_test/export' });
+    if (!t.status(dump, 200, { ref: 'R10.2', what: 'GET /_test/export' })) return;
+    const dst = (((dump.json || {}).state || {}).users || []).find((u) => u.handle === 'dst');
+    t.ok(dst && Math.abs(dst.balance) <= TWO53, {
+      ref: 'R4.17', what: "the recipient's balance after a 1000000000 credit", res: dump,
+      expected: 'within +-2^53, or the payment refused',
+      actual: `${dst && dst.balance}, which is 2^53 + ${dst ? dst.balance - TWO53 : '?'}`,
+    });
+  });
+
   test('a created payment never reuses a seeded id', ['R3.4e', 'R8.3'], async (t) => {
     // The specification's own fixture example seeds "id": "p_1" and "id": "rq_1", which is
     // exactly the shape a counter-based generator produces. Two resources sharing an id

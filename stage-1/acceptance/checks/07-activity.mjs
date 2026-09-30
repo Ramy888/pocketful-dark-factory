@@ -147,7 +147,7 @@ suite('07 activity feed', () => {
     const c = await loginAll(t);
     for (let i = 0; i < 6; i++) {
       const res = await api(t, { method: 'POST', path: '/payments', token: c.tokens.ada, idemKey: key('ord'), body: { to_handle: 'bob', amount: 1 + i } });
-      if (res.status !== 201) return;
+      if (!t.status(res, 201, { ref: 'R8.35', what: `setup: payment ${i} must exist, or an empty feed is trivially ordered (D47)` })) return;
     }
     const feed = await activity(t, c.tokens.ada, { limit: 200 });
     if (!t.status(feed, 200, { ref: 'R8.35', what: 'GET /activity' })) return;
@@ -182,7 +182,7 @@ suite('07 activity feed', () => {
     const c = await loginAll(t);
     for (let i = 0; i < 6; i++) {
       const res = await api(t, { method: 'POST', path: '/payments', token: c.tokens.ada, idemKey: key('pg'), body: { to_handle: 'bob', amount: 1 } });
-      if (res.status !== 201) return;
+      if (!t.status(res, 201, { ref: 'R8.37', what: `setup: payment ${i} must exist, or paging an empty feed proves nothing (D47)` })) return;
     }
     const all = await activity(t, c.tokens.ada, { limit: 200 });
     if (!t.status(all, 200, { ref: 'R8.37', what: 'the unpaged feed' })) return;
