@@ -99,6 +99,23 @@ async function validateFixture(fixture) {
     pendingUsers.push(record);
   }
 
+  // C6/R4.17: each balance alone staying within ±2^53 does not bound their
+  // *sum*. Above 2^53 the integer grid is no longer unit-spaced -- a credit
+  // of 1 to a balance already at 2^53 rounds away in IEEE-754 double
+  // arithmetic while the matching debit lands exactly, destroying money
+  // (R1.7) through an operation §8 requires to succeed. Capping the seeded
+  // total here makes both invariants true by construction from then on:
+  // balances are non-negative (R1.8) and R1.7 conserves the total, so no
+  // wallet can ever exceed a total that started at or below 2^53, and every
+  // future addition/subtraction between non-negative integers summing to at
+  // most 2^53 is exact. Summed as BigInt, not the `seededTotal` float, so
+  // the rejection threshold itself cannot be fooled by the same rounding
+  // it exists to rule out.
+  const seededTotalExact = pendingUsers.reduce((sum, r) => sum + BigInt(r.balance), 0n);
+  if (seededTotalExact > BigInt(MAX_SAFE_BALANCE)) {
+    fail('the sum of seeded balances exceeds the safe range');
+  }
+
   const seenPaymentIds = new Set();
   for (const p of paymentsInput) {
     if (!isPlainObject(p)) fail('each payment must be an object');

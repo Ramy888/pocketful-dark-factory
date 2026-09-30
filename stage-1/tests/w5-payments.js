@@ -364,6 +364,51 @@ async function main() {
     assert(coverage.ok, `criterion 12: D30 export-coverage guard still passes with a live payment (missing: ${JSON.stringify(coverage.missing)})`);
   }
 
+  // ---- C6/D49: a fixture whose seeded balances sum above 2^53 is refused ----
+  // Each individual balance staying within +-2^53 does not bound their sum.
+  // Above 2^53 the integer grid is no longer unit-spaced: a credit of 1 to a
+  // balance already at 2^53 rounds away in IEEE-754 double arithmetic while
+  // the matching debit lands exactly, destroying money (R1.7) through an
+  // operation the spec requires to succeed. Reproduced against the
+  // delivered route (not a unit test of fixture.js in isolation) so this
+  // proves the money is actually safe end to end, not just that reset
+  // answers the right status code.
+  const TWO_POW_53 = 9007199254740992;
+  {
+    const rejected = await req(server, 'POST', '/_test/reset', {
+      currency: 'EUR', minor_units: 2, payments: [], requests: [],
+      users: [
+        { id: 'u_big1', email: 'big1@example.com', password: 'correct horse', display_name: 'Big1', handle: 'big1', balance: TWO_POW_53 },
+        { id: 'u_big2', email: 'big2@example.com', password: 'correct horse', display_name: 'Big2', handle: 'big2', balance: TWO_POW_53 },
+      ],
+    });
+    assert(
+      rejected.status === 422 && rejected.json.error.code === 'validation_failed',
+      `C6/D49: a fixture whose balances sum to 2^54 (each individually <= 2^53) -> 422 validation_failed (got ${rejected.status} ${rejected.json && rejected.json.error && rejected.json.error.code})`,
+    );
+  }
+  // The boundary itself -- sum exactly 2^53 -- must still be accepted, and
+  // money must actually survive fifty payments there: the verifier's own
+  // repro, reproduced here as a regression rather than taken on report.
+  {
+    await reset(server, [
+      { id: 'u_edge1', email: 'edge1@example.com', password: 'correct horse', display_name: 'Edge1', handle: 'edge1', balance: TWO_POW_53 - 50 },
+      { id: 'u_edge2', email: 'edge2@example.com', password: 'correct horse', display_name: 'Edge2', handle: 'edge2', balance: 50 },
+    ]);
+    const tok1 = await login(server, 'edge1@example.com');
+    const results = [];
+    for (let i = 0; i < 50; i += 1) {
+      // eslint-disable-next-line no-await-in-loop -- sequential on purpose: each payment must actually land before the next, this is not a concurrency check
+      results.push(await pay(server, tok1, { to_handle: 'edge2', amount: 1 }, key('c6')));
+    }
+    assert(results.every((r) => r.status === 201), `C6/D49: fifty payments of 1 at the 2^53 boundary all -> 201 (got ${JSON.stringify(results.map((r) => r.status))})`);
+    const b1 = await balance(server, tok1);
+    const b2 = await balance(server, await login(server, 'edge2@example.com'));
+    assert(b1 === TWO_POW_53 - 100, `C6/D49: sender debited by exactly 50, no rounding loss (got ${b1}, want ${TWO_POW_53 - 100})`);
+    assert(b2 === 100, `C6/D49: receiver credited by exactly 50, no rounding loss (got ${b2})`);
+    assert(b1 + b2 === TWO_POW_53, `C6/D49 (R1.7): total conserved exactly at the boundary (got ${b1 + b2}, seeded ${TWO_POW_53})`);
+  }
+
   server.close();
   console.log(`\n${passCount} PASS, ${failCount} FAIL`);
 }
