@@ -1,7 +1,7 @@
 // Specification 10: export and import, and the preservation list item by item.
 
 import { suite, test, ALT_BASE_URL } from '../lib/runner.mjs';
-import { api, reset, login, loginAll, me, balance, activity, requests, key, PW } from '../lib/helpers.mjs';
+import { PW, activity, api, balance, key, login, loginAll, me, requests, reset, resetWith } from '../lib/helpers.mjs';
 
 async function exportState(t, base) {
   const res = await api(t, { path: '/_test/export', base });
@@ -373,6 +373,63 @@ suite('10 export and import', () => {
       expected: 'at most 10000 ms', actual: `${imp.ms} ms`,
     });
   });
+
+  // D69, found by auditing criterion-only coverage before the freeze rather than at it.
+  // W9's criterion 17 measured export and import of a 500-user fixture; the suite's other
+  // R10.9 check measures buildRichState, which is eight users. So the *scale* was verified
+  // once, at one commit, by the seat holding the veto -- and after the freeze the only thing
+  // anyone re-runs is the suite. A scaling regression would pass at eight users and nobody
+  // would look. Blocking because R10.9's budget is a stated requirement; slow because it
+  // seeds 500 scrypt hashes, so --fast drops it alongside the concurrency checks.
+  test('export and import stay inside the budget at 500 users', ['R10.9', 'R2.6'], async (t) => {
+    const users = [];
+    for (let i = 0; i < 500; i += 1) {
+      users.push({
+        id: `u_scale_${i}`, email: `scale${i}@example.com`, password: `scale-pw-${i}-distinct`,
+        display_name: `Scale ${i}`, handle: `scale${i}`, balance: 2000,
+      });
+    }
+    const seeded = await resetWith(t, { currency: 'EUR', minor_units: 2, users, payments: [], requests: [] }, null);
+    if (!t.status(seeded, 204, { ref: 'R3.3', what: 'reset with 500 users' })) return;
+    const first = await login(t, 'scale0@example.com', 'scale-pw-0-distinct');
+    if (!first) return;
+
+    // Give the state real content, matching the shape criterion 17 measured.
+    for (let i = 0; i < 50; i += 1) {
+      const paid = await api(t, {
+        method: 'POST', path: '/payments', token: first.token, idemKey: key('scale-p'),
+        body: { to_handle: `scale${i + 1}`, amount: 3 },
+      });
+      if (!t.status(paid, 201, { ref: 'R10.9', what: `setup payment ${i} (D47 control)` })) return;
+      const asked = await api(t, {
+        method: 'POST', path: '/requests', token: first.token, idemKey: key('scale-r'),
+        body: { payer_handle: `scale${i + 1}`, amount: 4 },
+      });
+      if (!t.status(asked, 201, { ref: 'R10.9', what: `setup request ${i}` })) return;
+    }
+    await api(t, {
+      method: 'POST', path: '/splits', token: first.token, idemKey: key('scale-s'),
+      body: { amount: 997, participant_handles: ['scale0', 'scale1', 'scale2', 'scale3', 'scale4', 'scale5', 'scale6'] },
+    });
+
+    const dump = await exportState(t);
+    if (!t.status(dump, 200, { ref: 'R10.2', what: 'GET /_test/export at 500 users' })) return;
+    t.ok(dump.ms <= 10000, {
+      ref: 'R10.9', what: 'GET /_test/export duration with 500 users, 50 payments, 50 requests and a split',
+      res: dump, expected: 'at most 10000 ms', actual: `${dump.ms} ms`,
+    });
+    const state = (dump.json || {}).state || {};
+    t.eq((state.users || []).length, 500, { ref: 'R10.11', what: 'users in the export', res: dump });
+
+    const imp = await importState(t, dump.json, undefined, 204);
+    t.ok(imp.ms <= 10000, {
+      ref: 'R10.9', what: 'POST /_test/import duration at the same scale',
+      res: imp, expected: 'at most 10000 ms', actual: `${imp.ms} ms`,
+    });
+    // The round trip has to survive the scale too, not merely finish inside the budget.
+    const back = await api(t, { method: 'POST', path: '/auth/login', body: { email: 'scale499@example.com', password: 'scale-pw-499-distinct' } });
+    t.status(back, 200, { ref: 'R10.11', what: 'the 500th user still logs in after the round trip' });
+  }, { slow: true });
 
   test('an export moves to another container with no dependency on the source', ['R10.6'], async (t) => {
     if (!ALT_BASE_URL) {
